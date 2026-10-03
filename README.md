@@ -14,6 +14,9 @@ Needs Node 20+ and the `claude` CLI signed in (it writes the villagers' lines).
     npm start            # continues save.json if there is one
     node src/main.js --new   # fresh town
 
+Or play in the browser: `npm run web`, then open http://localhost:4747.
+The clock only runs while the page is open.
+
 With no key, or if Jev can't be reached, the game falls back to a rough offline
 stand-in so you can still click around. The stand-in can't actually understand
 what you say, so play with the real Jev to judge the design.

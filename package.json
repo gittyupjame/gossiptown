@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "description": "A living gossip village run on Jev decisions. Text prototype.",
   "type": "module",
-  "scripts": { "start": "node src/main.js" },
+  "scripts": { "start": "node src/main.js", "web": "node src/web.js" },
   "engines": { "node": ">=20" }
 }
