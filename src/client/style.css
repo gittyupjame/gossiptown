@@ -227,3 +227,5 @@ body.cinema #hud, body.cinema #hint, body.cinema #chyron { opacity: 0; pointer-e
   #brain span { display: none; }
   .lt-name { font-size: 22px; }
 }
+
+.set-note { font-size: 13px; text-align: left; margin-top: 6px; }
