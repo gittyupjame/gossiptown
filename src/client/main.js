@@ -1,4 +1,4 @@
-// Thistlewick in the browser: wires the town, the cast, the camera, the controls and the
+// Gossiptown in the browser: wires the town, the cast, the camera, the controls and the
 // screens to the game. The game itself (Jev decisions, Claude words) lives in src/core.
 
 import * as THREE from "three";
@@ -21,7 +21,7 @@ const scene = (await import("./scene.js")).scene;
 
 // ---------- settings ----------
 
-const SETTINGS_KEY = "thistlewick.settings.v1";
+const SETTINGS_KEY = "gossiptown.settings.v1";
 const settings = (() => { try { return { daySeconds: 300, jevKey: "", ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") }; } catch { return { daySeconds: 300, jevKey: "" }; } })();
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} };
 let serverJev = false;
@@ -556,7 +556,7 @@ $("t-continue").onclick = () => {
   H.screen("title", false);
   resume();
 };
-$("end-new").onclick = () => { try { localStorage.removeItem("thistlewick.season.v2"); } catch {} H.screen("endcard", false); toTitle(); };
+$("end-new").onclick = () => { try { localStorage.removeItem("gossiptown.season.v2"); } catch {} H.screen("endcard", false); toTitle(); };
 
 async function intro() {
   mode = "intro";
@@ -578,12 +578,12 @@ async function intro() {
     b.close();
     await wait(180);
   };
-  await hostSay(`Welcome to Thistlewick, sweetie! The coziest little town with the sharpest little knives.`);
+  await hostSay(`Welcome to Gossiptown, sweetie! The coziest little town with the sharpest little knives.`);
   await hostSay(`I'm Primrose, your host. Ten women live here, and every three days, at the firepit, they vote one of their own out of town.`);
   cam.shot(new THREE.Vector3(0.6, 1.4, 8.4), 4.5, { from: new THREE.Vector3(0, 0, 0), height: 1.2 });
   await hostSay(`And now there's you, ${s.player.name}. The new girl. Nobody here trusts you. Yet.`);
   await hostSay(`Make friends. Make secret pacts. Spread a little gossip. Just don't get voted out.`);
-  await hostSay(`The last three standing face a jury of every woman they sent home. Win, and you're the Queen of Thistlewick!`);
+  await hostSay(`The last three standing face a jury of every woman they sent home. Win, and you're the Queen of Gossiptown!`);
   await hostSay(`Now, let me introduce the ladies...`, 2200);
   for (const v of VILLAGERS) {
     const w = people[v.id].walker;
@@ -709,7 +709,7 @@ function showNight(s, lines) {
   const told = s.player.told.filter((t) => t.day === s.day).length;
   const lastVote = s.votes.at(-1);
   $("night-kicker").textContent = `End of day ${s.day}`;
-  $("night-title").textContent = lastVote?.day === s.day ? `${sim.nameOf(s, lastVote.out)} has left Thistlewick.` : "The town goes to bed...";
+  $("night-title").textContent = lastVote?.day === s.day ? `${sim.nameOf(s, lastVote.out)} has left Gossiptown.` : "The town goes to bed...";
   const rows = lines.map((l) => `<div class="nb-line"><span class="ic">${/quit|fired/.test(l) ? "💼" : "🌙"}</span><span>${l}</span></div>`).join("");
   $("night-body").innerHTML = `${rows || `<div class="nb-recap">A quiet night. Or so it seems. Somewhere, someone is plotting.</div>`}
     <div class="nb-recap">Today you heard <b>${today}</b> new rumor${today === 1 ? "" : "s"} and started <b>${told}</b>.</div>
@@ -741,7 +741,7 @@ function showEnd(result) {
   const won = s.over?.won;
   const finale = s.over?.reason === "finale";
   $("end-kicker").textContent = finale ? "The finale" : `Day ${s.day}`;
-  $("end-title").textContent = won ? `👑 Queen of Thistlewick!` : finale ? `So close. ${sim.nameOf(s, s.over.winner)} won.` : `You've been voted out.`;
+  $("end-title").textContent = won ? `👑 Queen of Gossiptown!` : finale ? `So close. ${sim.nameOf(s, s.over.winner)} won.` : `You've been voted out.`;
   const myRoots = new Set(s.player.told.map((t) => t.rid));
   let reach = 0;
   for (const v of Object.values(s.people)) if (Object.keys(v.knows).some((rid) => s.rumors[rid]?.origin === "player" && v.knows[rid].conf >= 0.5)) reach++;
@@ -761,4 +761,4 @@ voice.initVoice().then(() => H.setBrain(jev.status(), voice.voiceStatus()));
 toTitle();
 cam.pos.set(30, 20, 30);
 requestAnimationFrame(frame);
-window.__thistlewick = { renderer, get game() { return game; }, people, ui, cam, setPaused, get mode() { return mode; }, startVote, jev, voice };
+window.__gossiptown = { renderer, get game() { return game; }, people, ui, cam, setPaused, get mode() { return mode; }, startVote, jev, voice };

@@ -5,7 +5,7 @@
 import { newTown, SHOW } from "./cast.js";
 import * as sim from "./sim.js";
 
-const SAVE_KEY = "thistlewick.season.v2";
+const SAVE_KEY = "gossiptown.season.v2";
 
 export function hasSave() {
   try { const raw = localStorage.getItem(SAVE_KEY); return !!raw && JSON.parse(raw).version === 2 && !JSON.parse(raw).over; } catch { return false; }

@@ -10,7 +10,7 @@
 //   scheme   how much she plays the game          nerve    how bold she is with the newcomer
 
 export const SHOW = {
-  name: "Thistlewick",
+  name: "Gossiptown",
   tagline: "Ten women. One tiny town. Every few days, somebody gets voted out.",
   voteEvery: 3, // in-game days between votes
   finalists: 3, // the season ends when this many are left (you included)
@@ -127,7 +127,7 @@ export const VILLAGERS = [
     idle: "cane", speed: 0.75,
   },
   {
-    id: "tansy", name: "Tansy Quill", job: "editor of the Thistlewick Whisper", work: "gazette", archetype: "The Mastermind",
+    id: "tansy", name: "Tansy Quill", job: "editor of the Gossiptown Whisper", work: "gazette", archetype: "The Mastermind",
     quote: "Everything is a story. I just decide how it ends.",
     traits: ["calculating", "observant", "plays every side", "patient", "smiles too much", "collects secrets like stamps"],
     voice: "precise and pleasant, asks leading questions, takes 'notes' out loud",

@@ -791,7 +791,7 @@ export function applyVote(s, ballots, outId, ui) {
   for (const v of alive(s)) remember(v, s, `the vote sent ${nameOf(s, outId)} home; ${Object.entries(ballots).filter(([, t]) => t === v.id).map(([x]) => firstOf(s, x)).join(", ") || "nobody"} voted for me`);
   const rec = { day: s.day, ballots, out: outId, betrayals };
   s.votes.push(rec);
-  headline(s, `${nameOf(s, outId)} was voted out of Thistlewick.`, "vote", ui);
+  headline(s, `${nameOf(s, outId)} was voted out of Gossiptown.`, "vote", ui);
   return rec;
 }
 

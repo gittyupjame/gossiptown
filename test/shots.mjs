@@ -25,6 +25,6 @@ await page.waitForTimeout(300);
 await page.keyboard.down("KeyW"); await page.waitForTimeout(900); await page.keyboard.up("KeyW");
 await page.waitForTimeout(6000);
 await page.screenshot({ path: `${out}/05-walk.png` });
-console.log(JSON.stringify(await page.evaluate(() => ({ mode: window.__thistlewick.mode, minute: window.__thistlewick.game.state().minute }))));
+console.log(JSON.stringify(await page.evaluate(() => ({ mode: window.__gossiptown.mode, minute: window.__gossiptown.game.state().minute }))));
 console.log(errors.slice(0, 30).join("\n"));
 await browser.close();

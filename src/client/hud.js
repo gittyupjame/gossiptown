@@ -70,7 +70,7 @@ function next() {
 // ---------- first-time tips ----------
 
 export const TIPS = {
-  welcome: { icon: "🚶‍♀️", title: "Welcome to Thistlewick", text: "Walk with <kbd>W A S D</kbd> or the arrow keys. Walk up to anyone and press <kbd>Enter</kbd> to talk. <kbd>Tab</kbd> opens your Gossip Board, <kbd>P</kbd> pauses." },
+  welcome: { icon: "🚶‍♀️", title: "Welcome to Gossiptown", text: "Walk with <kbd>W A S D</kbd> or the arrow keys. Walk up to anyone and press <kbd>Enter</kbd> to talk. <kbd>Tab</kbd> opens your Gossip Board, <kbd>P</kbd> pauses." },
   talk: { icon: "💬", title: "Just say it", text: "Type anything and press <kbd>Enter</kbd>. She reacts to what you actually say: ask questions, flatter her, spill (or invent) gossip, propose a secret pact, or ask her to vote someone out. Empty <kbd>Enter</kbd> or walking away ends the chat." },
   overheard: { icon: "👂", title: "Eavesdropping", text: "Stand close to hear every word. From further away you only catch pieces. Get too close and they might catch you." },
   rumor: { icon: "☕", title: "Fresh tea!", text: "You just learned a rumor. It's pinned to your Gossip Board (<kbd>Tab</kbd>). Pass it on, use it as leverage, or keep it in your pocket." },
@@ -87,7 +87,7 @@ export const TIPS = {
   fight: { icon: "💢", title: "A fight!", text: "Everyone who saw it will be talking about it. Fights make enemies, and enemies make votes." },
 };
 
-const seenKey = "thistlewick.tips.v1";
+const seenKey = "gossiptown.tips.v1";
 let seen = (() => { try { return JSON.parse(localStorage.getItem(seenKey)) || {}; } catch { return {}; } })();
 const tipQueue = [];
 let tipOpen = null;

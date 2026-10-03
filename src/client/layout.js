@@ -1,4 +1,4 @@
-// The shape of Thistlewick: where everything stands, what you can walk on, and how
+// The shape of Gossiptown: where everything stands, what you can walk on, and how
 // people find their way around. Units are metres; x runs east, z runs south.
 
 export const BOUNDS = { x0: -62, x1: 62, z0: -74, z1: 52 };

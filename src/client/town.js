@@ -603,7 +603,7 @@ function buildGate() {
   const g = new THREE.Group(); g.position.set(L.GATE.x, 0, L.GATE.z); staticRoot.add(g);
   for (const sx of [-2.6, 2.6]) { cyl(g, 0.3, 4.2, "#8a5a34", sx, 2.1, 0); sph(g, 0.35, "#e86f9a", sx, 4.35, 0); }
   box(g, 6.2, 0.35, 0.5, "#8a5a34", 0, 3.8, 0);
-  const s = hangingSign(g, "Thistlewick", 0, 3.2, 0.3, Math.PI, { border: "#8a5a34", fg: "#e8577e" });
+  const s = hangingSign(g, "Gossiptown", 0, 3.2, 0.3, Math.PI, { border: "#8a5a34", fg: "#e8577e" });
   s.scale.set(1.3, 1.3, 1);
   for (let i = 0; i < 16; i++) sph(g, 0.16, ["#ff7aa8", "#ffffff", "#ffd76a"][i % 3], -2.6 + (i / 15) * 5.2, 4.0 + Math.sin((i / 15) * Math.PI) * 0.15, 0.25, { lo: true });
   // fence along the town edge on either side of the gate

@@ -1,7 +1,7 @@
-# Thistlewick
+# Gossiptown
 
 A cosy, catty reality show in a tiny storybook town. Ten women live in
-Thistlewick. Every third evening they gather at the firepit and vote one of
+Gossiptown. Every third evening they gather at the firepit and vote one of
 them out of town. You are the newest arrival, and you are on the ballot too.
 
 Make friends, form secret alliances, pass on (or invent) gossip, and steer the

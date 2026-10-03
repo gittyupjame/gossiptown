@@ -74,4 +74,4 @@ createServer(async (req, res) => {
     console.error(e);
     if (!res.headersSent) json(res, 502, { error: e.message });
   }
-}).listen(PORT, process.env.HOST || "127.0.0.1", () => console.log(`Thistlewick is running at http://localhost:${PORT} (Jev: ${JEV_KEY ? "key set" : "offline stand-in"}, dialogue: ${canSay ? "Claude" : "phrasebook"})`));
+}).listen(PORT, process.env.HOST || "127.0.0.1", () => console.log(`Gossiptown is running at http://localhost:${PORT} (Jev: ${JEV_KEY ? "key set" : "offline stand-in"}, dialogue: ${canSay ? "Claude" : "phrasebook"})`));

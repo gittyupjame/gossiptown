@@ -65,13 +65,13 @@ export async function runVote(ctx) {
   H.voteHud(null);
   if (finale) {
     await hostSay(`Good evening, ladies, and welcome to the finale!`);
-    await hostSay(`Three women left. Only one will be crowned the Queen of Thistlewick.`);
+    await hostSay(`Three women left. Only one will be crowned the Queen of Gossiptown.`);
     await hostSay(`Tonight the women you sent home get the last word. Jury, your votes please.`);
   } else {
     const n = sim.alive(s).length + (s.player.out ? 0 : 1);
     await hostSay(pick([`Good evening, ladies. Welcome to the firepit.`, `Ladies. Take your seats. You know why we're here.`, `Welcome back to the firepit, my little backstabbers.`]));
     await hostSay(pick([`${n} of you sitting here. Three days of whispers, pacts and promises.`, `Smiles all week. Knives tonight.`, `I've heard things. Oh, I've heard things.`]));
-    await hostSay(`Tonight, one of you leaves Thistlewick for good.`);
+    await hostSay(`Tonight, one of you leaves Gossiptown for good.`);
   }
 
   // ---------- the player's ballot ----------
@@ -146,7 +146,7 @@ export async function runVote(ctx) {
   const total = Object.values(result.rounds.at(-1).ballots).filter((t) => t === chosen).length;
   if (result.drawn) await hostSay(`Still tied! So the fire decides...`, 2400);
   if (finale) {
-    await hostSay(`With ${total} vote${total === 1 ? "" : "s"}, the Queen of Thistlewick is...`, 2600);
+    await hostSay(`With ${total} vote${total === 1 ? "" : "s"}, the Queen of Gossiptown is...`, 2600);
     const cw = ctx.walker(chosen);
     ctx.cam.shot(vec(cw.x, 1.5, cw.z), 4.5, { from: CENTRE });
     await ctx.wait(900);
