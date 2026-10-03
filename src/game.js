@@ -155,6 +155,7 @@ export function createGame(out, { fresh = false } = {}) {
   async function nightfall() {
     paused = true;
     clearInterval(timer);
+    timer = null;
     out.dusk?.();
     ui.say(`\nThe bells ring eight. Day ${s.day} is over. The town goes to bed and makes up its mind...`);
     const lines = await sim.endOfDay(s, ui);

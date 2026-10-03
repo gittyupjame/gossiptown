@@ -10,7 +10,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { createGame } from "./game.js";
 import * as sim from "./sim.js";
-import { SPOTS, HOUSES, START, zoneAt, walkable } from "./public/map.js";
+import { SPOTS, HOUSES, START, zoneAt, walkable, wrapX, dist, dxTo } from "./public/map.js";
 
 const PORT = Number(process.env.PORT || 4747);
 const PUBLIC = new URL("./public/", import.meta.url);
@@ -21,6 +21,15 @@ let spot = {};           // villager id -> the tile they are standing on or walk
 let pairs = [];          // who stopped to talk to whom this quarter hour
 let ppos = { ...START }; // where the player is, in tiles
 let over = false, night = null, waiting = false; // waiting: the night is over, the day starts when you click
+let paused = true; // the world starts stopped; nothing runs and no Jev calls are made until you press Play
+
+// The clock (and with it every Jev and Claude call the town makes) only runs while
+// a page is open, the game is not paused, and it is daytime.
+function syncClock() {
+  const run = clients.size > 0 && !paused && !over && !night && !waiting;
+  if (run && !game.running()) game.start();
+  if (!run && game.running()) game.stop();
+}
 const clients = new Set();
 
 function send(event, data) {
@@ -51,13 +60,13 @@ function placeSpot(v) {
 
 function besideTile(t, v, zone) {
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
-    const x = t.x + dx, y = t.y + dy;
+    const x = wrapX(t.x + dx), y = t.y + dy;
     if (walkable(x, y) && !taken(x, y, v.id) && (!zone || zoneAt(x, y) === zone)) return { x, y };
   }
   return null;
 }
 
-const distTo = (p) => Math.hypot(ppos.x - (p.x + 0.5), ppos.y - (p.y + 0.5));
+const distTo = (p) => dist(ppos.x, ppos.y, p.x + 0.5, p.y + 0.5);
 
 // ---------- hooks the engine calls ----------
 
@@ -76,7 +85,7 @@ const hooks = {
     const myZone = zoneAt(ppos.x, ppos.y);
     const indoors = !["square", "market", "garden"].includes(place);
     if (myZone && myZone !== place) return "none";
-    const d = Math.hypot(ppos.x - (pa.x + pb.x + 1) / 2, ppos.y - (pa.y + pb.y + 1) / 2);
+    const d = dist(ppos.x, ppos.y, pa.x + 0.5 + dxTo(pa.x, pb.x) / 2, (pa.y + pb.y + 1) / 2);
     if (d <= 3.5 && myZone === place) return "full";
     if (d <= 8 && (myZone === place || !indoors || d <= 4)) return "part";
     return "none";
@@ -98,7 +107,7 @@ function snapshot() {
     day: s.day, clock: sim.clock(s.minute), minute: s.minute,
     place: s.player.location, talkingTo: s.player.talkingTo, bag: s.player.gifts,
     people: sim.alive(s).map((v) => ({ id: v.id, name: v.name, first: sim.first(v), job: v.employed ? v.job : "out of work", home: v.location === "home", at: spot[v.id] })),
-    pairs, over, night: !!night,
+    pairs, over, night: !!night, paused,
   };
 }
 
@@ -123,7 +132,7 @@ const out = {
     s.player.pos = ppos;
     waiting = true;
     send("dawn", { pos: ppos, state: snapshot() });
-    setTimeout(() => waiting && game.stop(), 0);
+    setTimeout(syncClock, 0);
   },
 };
 
@@ -139,7 +148,7 @@ function begin(fresh) {
   game.save();
   log(`Thistlewick. You are the newcomer. Walk with the arrow keys or WASD. Walk up to someone and press E.`);
   send("reset", resetData());
-  if (clients.size) game.start();
+  syncClock();
 }
 const resetData = () => ({ lines, state: snapshot(), pos: ppos, over, night: night?.lines || (night ? [] : null), waiting });
 begin(process.argv.includes("--new"));
@@ -147,8 +156,8 @@ begin(process.argv.includes("--new"));
 // ---------- the player ----------
 
 function movePlayer(x, y) {
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-  ppos = { x, y };
+  if (!Number.isFinite(x) || !Number.isFinite(y) || paused) return;
+  ppos = { x: wrapX(x), y };
   s.player.pos = ppos;
   if (s.player.talkingTo) {
     const p = spot[s.player.talkingTo];
@@ -162,6 +171,7 @@ function movePlayer(x, y) {
 // Things you do to a person: talk, give, and anything typed while talking.
 async function act({ cmd, near, echo, speech }) {
   if (over || night || typeof cmd !== "string") return;
+  if (paused) { log("The game is paused. Press Play to carry on."); return; }
   if (near) {
     const v = s.people[near];
     if (!v || v.gone || !spot[v.id] || distTo(spot[v.id]) > 3) { log("They are too far away. Walk closer."); return; }
@@ -193,8 +203,8 @@ createServer(async (req, res) => {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
       res.write(`event: reset\ndata: ${JSON.stringify(resetData())}\n\n`);
       clients.add(res);
-      if (clients.size === 1 && !over && !night && !waiting) game.start();
-      req.on("close", () => { clients.delete(res); if (!clients.size && !night) game.stop(); });
+      syncClock();
+      req.on("close", () => { clients.delete(res); syncClock(); });
       return;
     }
     if (req.method === "POST" && req.url === "/pos") {
@@ -209,7 +219,15 @@ createServer(async (req, res) => {
     }
     if (req.method === "POST" && req.url === "/morning") {
       res.end("ok");
-      if (waiting) { waiting = false; if (clients.size) game.start(); }
+      if (waiting) { waiting = false; syncClock(); }
+      return;
+    }
+    if (req.method === "POST" && req.url === "/pause") {
+      const { paused: p } = JSON.parse(await body(req));
+      res.end("ok");
+      paused = !!p;
+      syncClock();
+      send("state", snapshot());
       return;
     }
     if (req.method === "POST" && req.url === "/new") {

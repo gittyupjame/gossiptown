@@ -14,12 +14,17 @@ Needs Node 20+ and the `claude` CLI signed in (it writes the villagers' lines).
     npm start            # continues save.json if there is one
     node src/main.js --new   # fresh town
 
-Or play the map version in the browser: `npm run web`, then open
-http://localhost:4747. Walk around the town with the arrow keys or WASD. Walk
-up to someone and press E to talk, give a gift, or follow them. You type what
-you say in the box on the right. Stand close to people talking and you hear
-every word; a few steps away you only catch part of it. The clock only runs
-while the page is open, and each new day waits until you start it.
+Or play the 3D version in the browser: `npm run web`, then open
+http://localhost:4747. The town sits on a small round planet. Walk with the
+arrow keys or WASD, scroll to zoom. Walk up to someone and press E to talk,
+give a gift, or follow them; you type what you say in the box on the right.
+Stand close to people talking and you hear every word; a few steps away you
+only catch part of it.
+
+The game starts paused. Press Play (or P) to start it and Pause to stop it.
+While paused, nothing moves, the clock stops, and no Jev or Claude calls are
+made. It also stops when no page is open, and each new day waits until you
+start it. The 3D drawing uses three.js, loaded from cdn.jsdelivr.net.
 
 With no key, or if Jev can't be reached, the game falls back to a rough offline
 stand-in so you can still click around. The stand-in can't actually understand

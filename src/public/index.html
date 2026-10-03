@@ -10,7 +10,19 @@
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.45 ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
   body { display: flex; }
   #game { position: relative; flex: 1; min-width: 0; }
-  #world { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+  #world { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 30%, #bfe6ff 0%, #8ccdf4 45%, #6aa8e8 100%); transition: background 2s; }
+  #world.night { background: radial-gradient(ellipse at 50% 30%, #3a4a8a 0%, #232a5a 50%, #141838 100%); }
+  #world canvas { display: block; }
+  #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .tag { position: absolute; transform: translate(-50%, -100%); background: rgba(30,26,20,0.72); color: #fff8e8; font: bold 12px ui-monospace, Menlo, monospace; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
+  .tag.near { background: #f0bf5e; color: #2a2010; }
+  .place { position: absolute; transform: translate(-50%, -50%); color: #fff; font: bold 13px ui-monospace, Menlo, monospace; text-shadow: 0 1px 3px rgba(0,0,0,0.7); white-space: nowrap; opacity: 0.9; }
+  .bubble { position: absolute; transform: translate(-50%, -100%); max-width: 230px; background: #fffaf0; color: #2a2218; border: 2px solid #2a2218; border-radius: 10px; padding: 5px 9px; font: 13px/1.35 ui-monospace, Menlo, monospace; }
+  .bubble::after { content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -6px; border: 6px solid transparent; border-top-color: #2a2218; border-bottom: 0; }
+  #playbtn { position: absolute; right: 12px; top: 10px; font-size: 15px; padding: 6px 14px; background: #f0bf5e; color: #2a2010; border: 0; font-weight: bold; }
+  #pausebox { position: absolute; inset: 0; background: rgba(10,12,24,0.35); display: none; align-items: flex-start; justify-content: center; padding-top: 60px; pointer-events: none; }
+  #pausebox.show { display: flex; }
+  #pausebox div { background: rgba(20,18,14,0.85); padding: 14px 22px; border-radius: 10px; border: 1px solid var(--line); text-align: center; }
   #hud { position: absolute; left: 12px; top: 10px; background: rgba(20,18,14,0.82); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); pointer-events: none; }
   #hud b { color: var(--you); }
   #hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: rgba(20,18,14,0.8); padding: 5px 12px; border-radius: 6px; color: var(--dim); font-size: 13px; pointer-events: none; white-space: nowrap; }
@@ -52,10 +64,13 @@
 </head>
 <body>
 <div id="game">
-  <canvas id="world"></canvas>
+  <div id="world"></div>
+  <div id="labels"></div>
+  <div id="pausebox" class="show"><div><b style="color:var(--you)">Paused.</b> The whole town is stopped.<br>Press <kbd>P</kbd> or Play to carry on.</div></div>
+  <button id="playbtn">▶ Play</button>
   <div id="hud">Day <b id="day">1</b> · <span id="clock">08:00</span> · <span id="place">the village square</span></div>
   <div id="toast"></div>
-  <div id="hint"><kbd>WASD</kbd>/<kbd>arrows</kbd> walk · <kbd>E</kbd> talk to someone nearby · <kbd>Enter</kbd> type</div>
+  <div id="hint"><kbd>WASD</kbd>/<kbd>arrows</kbd> walk · <kbd>E</kbd> talk to someone nearby · <kbd>Enter</kbd> type · <kbd>P</kbd> pause · scroll to zoom</div>
 
   <div class="menu" id="personmenu">
     <h3 id="pm-name"></h3>
@@ -103,6 +118,7 @@
     <form id="f"><input id="in" autocomplete="off" placeholder="Press Enter to type"><button>Send</button></form>
   </div>
 </div>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }</script>
 <script type="module" src="/client.js"></script>
 </body>
 </html>
