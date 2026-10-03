@@ -68,11 +68,13 @@ export function createGame(out, { fresh = false } = {}) {
     if (s.player.talkingTo && (speech || !commands.includes(lc))) {
       const v = s.people[s.player.talkingTo];
       if (v.location !== s.player.location || v.gone) { ui.say(`${sim.first(v)} isn't here anymore.`); s.player.talkingTo = null; return; }
-      const { reply, debug } = await sim.playerSays(s, v, text, ui);
+      const { reply, debug, leaving } = await sim.playerSays(s, v, text, ui);
       ui.say(`${sim.first(v)}: ${reply}`);
       ui.bubble?.(v.id, reply);
       if (SHOW_JEV) ui.say(`   [jev] ${JSON.stringify(debug)}`);
       if (!s.player.talkingTo) ui.say(`(${sim.first(v)} ends the conversation.)`);
+      // someone who said they would go and do something right now goes
+      if (leaving && v.intent) await sim.setOff(s, v, ui);
       return;
     }
 
@@ -160,7 +162,7 @@ export function createGame(out, { fresh = false } = {}) {
     out.night?.(lines);
     if (s.banished) { save(); over = true; ui.say("\nThanks for playing."); out.ended?.(); return; }
     s.day += 1; s.minute = 8 * 60; s.player.location = "square"; s.player.talkingTo = null; s.player.following = null;
-    for (const v of sim.alive(s)) v.location = v.schedule[8] || "square";
+    for (const v of sim.alive(s)) v.location = "home"; // everyone wakes at home; Jev decides where they go
     save();
     out.dawn?.();
     ui.say(`\nDay ${s.day} begins. You wake in your rented room and step out into the square. (Prototype: days after the first work, but the season ending isn't built yet.)`);

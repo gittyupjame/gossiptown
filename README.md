@@ -66,8 +66,21 @@ Settings (env or `.env`):
 Three layers: code keeps the state and the rules, Jev makes every judgement,
 and Claude only writes words.
 
-- **Every 15 game minutes** each villager gets a Jev call for where to go,
-  and every pair of people in the same place gets one for whether they talk,
+- **Nobody has a schedule.** Everyone wakes at home. Every 15 game minutes
+  each villager gets a Jev call for where to go: stay, a place, home, or go
+  and find a certain person. Jev decides from their job, the time, their mood,
+  where everyone is, and any plan they have.
+- **Plans are kept.** When a villager decides to do something (ask someone if
+  a story is true, warn them, confront them, pass it on, take it to the
+  elder), it becomes a plan. The plan goes into every later Jev call for them
+  until they do it. If they said they would go right away, they leave the
+  conversation and go. Claude is told exactly what was decided and is not
+  allowed to have anyone promise anything else.
+- **Checking a story.** When someone asks a person about a story about them,
+  Jev decides how that person answers (admit, deny, lie, dodge) and whether
+  the asker still believes it. If the newcomer made it up and gets caught,
+  both of them trust the newcomer less, and word gets around.
+- Every pair of people in the same place gets one for whether they talk,
   what about, which piece of gossip gets passed on, how it changes their
   feelings, and whether an argument turns into a fight.
 - **When gossip passes on**, a second Jev call decides whether the listener

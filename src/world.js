@@ -11,65 +11,57 @@ export const PLACES = {
   hall: { name: "the elder's hall", desc: "A stone hall where disputes are heard and town business is done." },
 };
 
-// Hour -> place. Missing hours carry the last one forward. "home" = off the map.
-const sched = (pairs) => pairs;
+// `work` is where someone works. Nobody has a fixed schedule: every quarter hour Jev
+// decides where each villager goes, from who they are, the time, and their plans.
 
 export const VILLAGERS = [
   {
-    id: "brannoc", name: "Brannoc Hale", job: "blacksmith", employer: null,
+    id: "brannoc", work: "smithy", name: "Brannoc Hale", job: "blacksmith", employer: null,
     traits: ["gruff", "proud", "honest", "slow to trust", "quick-tempered when insulted"],
     voice: "short blunt sentences, hates flattery",
     secrets: [],
-    schedule: sched({ 8: "smithy", 12: "tavern", 13: "smithy", 18: "tavern", 20: "home" }),
   },
   {
-    id: "pip", name: "Pip Fennel", job: "blacksmith's apprentice", employer: "brannoc",
+    id: "pip", work: "smithy", name: "Pip Fennel", job: "blacksmith's apprentice", employer: "brannoc",
     traits: ["eager", "gullible", "chatty", "wants to be liked", "looks up to Brannoc"],
     voice: "fast and excitable, says 'honest!' a lot",
     secrets: [],
-    schedule: sched({ 8: "smithy", 12: "square", 13: "smithy", 17: "square", 18: "tavern", 20: "home" }),
   },
   {
-    id: "marigold", name: "Marigold Ashby", job: "baker", employer: null,
+    id: "marigold", work: "bakery", name: "Marigold Ashby", job: "baker", employer: null,
     traits: ["anxious", "kind", "dislikes gossip", "conflict-avoidant", "very loyal to friends"],
     voice: "soft, apologetic, trails off",
     secrets: ["Marigold owes Odo a large sum of money and is months behind on repaying it."],
-    schedule: sched({ 8: "bakery", 15: "market", 16: "bakery", 19: "home" }),
   },
   {
-    id: "odo", name: "Odo Crane", job: "merchant and moneylender", employer: null,
+    id: "odo", work: "market", name: "Odo Crane", job: "merchant and moneylender", employer: null,
     traits: ["sly", "greedy", "well-connected", "charming when it pays", "holds grudges"],
     voice: "smooth, flattering, always hinting at a deal",
     secrets: ["Odo uses a crooked scale at his market stall and shorts every customer."],
-    schedule: sched({ 8: "market", 12: "tavern", 13: "market", 17: "hall", 18: "tavern", 20: "home" }),
   },
   {
-    id: "wren", name: "Wren Tallow", job: "tavern keeper", employer: null,
+    id: "wren", work: "tavern", name: "Wren Tallow", job: "tavern keeper", employer: null,
     traits: ["warm", "nosy", "the town's gossip hub", "protective of her tavern", "loves a good story"],
     voice: "friendly, calls everyone 'love', asks lots of questions",
     secrets: [],
-    schedule: sched({ 8: "tavern", 11: "market", 12: "tavern", 20: "tavern" }),
   },
   {
-    id: "silas", name: "Silas Moor", job: "tavern server", employer: "wren",
+    id: "silas", work: "tavern", name: "Silas Moor", job: "tavern server", employer: "wren",
     traits: ["bitter", "ambitious", "resentful of Wren", "sharp-tongued", "secretly insecure"],
     voice: "dry, sarcastic, mutters asides",
     secrets: ["Silas has been stealing coins from the tavern till for weeks."],
-    schedule: sched({ 8: "square", 10: "tavern", 15: "square", 16: "tavern", 20: "home" }),
   },
   {
-    id: "hesper", name: "Elder Hesper Vane", job: "village elder", employer: null,
+    id: "hesper", work: "hall", name: "Elder Hesper Vane", job: "village elder", employer: null,
     traits: ["stern", "fair", "values order above all", "distrusts outsiders", "hates being lied to"],
     voice: "formal, measured, never wastes a word",
     secrets: [],
-    schedule: sched({ 8: "hall", 12: "square", 13: "hall", 18: "tavern", 19: "home" }),
   },
   {
-    id: "juniper", name: "Juniper Reed", job: "herbalist", employer: null,
+    id: "juniper", work: "garden", name: "Juniper Reed", job: "herbalist", employer: null,
     traits: ["dreamy", "superstitious", "gentle", "a bit of an outsider herself", "notices small things"],
     voice: "wandering, talks about omens and plants",
     secrets: ["Juniper was run out of her last town after an accusation she won't talk about."],
-    schedule: sched({ 8: "garden", 11: "square", 12: "garden", 16: "bakery", 17: "garden", 19: "home" }),
   },
 ];
 
@@ -98,12 +90,12 @@ export function newTown() {
   for (const v of VILLAGERS) {
     people[v.id] = {
       ...structuredClone(v),
-      location: v.schedule[8],
+      location: "home", // everyone wakes up at home
       activity: "starting the day",
       mood: { anger: 0, fear: 0, cheer: 1 }, // 0..3 each
       knows: {},        // rumorId -> { conf 0..1, from, day, time }
       memory: [],       // short lines of what happened to them
-      intent: null,     // { kind, target } set by decisions, acted on later
+      intent: null,     // a plan: { kind, target, rumor, why, promisedTo, now } set by decisions, acted on later
       gone: false,      // moved away or banished
       employed: true,
     };

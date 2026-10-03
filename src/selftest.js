@@ -23,9 +23,14 @@ const script = {
 };
 async function say(id, line) {
   const v = s.people[id];
-  if (v.location !== s.player.location) { console.log(`> (${id} is not here, at ${v.location})`); return; }
+  if (v.location !== s.player.location) {
+    if (v.location === "home") { console.log(`> (${id} is at home)`); return; }
+    s.player.location = v.location; // walk over to them
+  }
+  s.player.talkingTo = id;
   const r = await sim.playerSays(s, v, line, ui);
   console.log(`> YOU to ${sim.first(v)}: ${line}\n  ${sim.first(v)}: ${r.reply}\n  [jev] ${JSON.stringify(r.debug)}`);
+  if (r.leaving && v.intent) { await sim.setOff(s, v, ui); console.log(`  (${sim.first(v)} leaves for ${sim.placeName(v.location)})`); }
 }
 
 console.log(`Decisions: ${jev.mode()}`);
