@@ -3,6 +3,9 @@
 //   say(text)        print a line
 //   status(text)     the current "[Day 1 08:00]" line changed
 //   ended()          the game is over (banished)
+// and, for the map version, optional hooks the engine calls (see web.js):
+//   hooks: { moved, pair, hearing, overheard, bubble, approach }
+//   beforeTick(), afterTick(), dusk(), night(lines), dawn()
 
 import "./env.js";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -34,7 +37,7 @@ export const HELP = `Commands
 export function createGame(out, { fresh = false } = {}) {
   let s = existsSync(SAVE) && !fresh ? JSON.parse(readFileSync(SAVE, "utf8")) : newTown();
   let busy = false, paused = false, carry = 0, timer = null, over = false;
-  const ui = { say: (t) => out.say(t) };
+  const ui = { say: (t) => out.say(t), ...(out.hooks || {}) };
   const save = () => writeFileSync(SAVE, JSON.stringify(s));
 
   function status() {
@@ -44,6 +47,7 @@ export function createGame(out, { fresh = false } = {}) {
 
   function look() {
     const place = PLACES[s.player.location];
+    if (!place) return `You are on the lane between buildings.\nPlaces: ${Object.keys(PLACES).join(", ")}.`;
     const here = sim.at(s, s.player.location);
     const lines = [`You are at ${place.name}. ${place.desc}`];
     lines.push(here.length ? `Here: ${here.map((v) => `${v.name} (${v.employed ? v.job : "out of work"})`).join(", ")}.` : "Nobody else is here.");
@@ -51,7 +55,8 @@ export function createGame(out, { fresh = false } = {}) {
     return lines.join("\n");
   }
 
-  async function handle(line) {
+  // speech: true means the line is something you say out loud, even if it starts with a command word
+  async function handle(line, { speech = false } = {}) {
     const text = line.trim();
     if (!text || over) return;
     const [cmd, ...rest] = text.split(/\s+/);
@@ -60,11 +65,12 @@ export function createGame(out, { fresh = false } = {}) {
 
     // in a conversation, anything that is not a command is something you say
     const commands = ["look", "go", "talk", "listen", "follow", "stop", "give", "note", "do", "map", "journal", "wait", "stats", "help", "quit", "bag", "bye"];
-    if (s.player.talkingTo && !commands.includes(lc)) {
+    if (s.player.talkingTo && (speech || !commands.includes(lc))) {
       const v = s.people[s.player.talkingTo];
       if (v.location !== s.player.location || v.gone) { ui.say(`${sim.first(v)} isn't here anymore.`); s.player.talkingTo = null; return; }
       const { reply, debug } = await sim.playerSays(s, v, text, ui);
       ui.say(`${sim.first(v)}: ${reply}`);
+      ui.bubble?.(v.id, reply);
       if (SHOW_JEV) ui.say(`   [jev] ${JSON.stringify(debug)}`);
       if (!s.player.talkingTo) ui.say(`(${sim.first(v)} ends the conversation.)`);
       return;
@@ -113,7 +119,7 @@ export function createGame(out, { fresh = false } = {}) {
         ui.say(`You slip an unsigned note where ${sim.first(v)} will find it.`);
         break;
       }
-      case "do": ui.say(await sim.doAction(s, arg, ui)); break;
+      case "do": if (!PLACES[s.player.location]) { ui.say("Go into a building, the square, the market or the garden first."); break; } ui.say(await sim.doAction(s, arg, ui)); break;
       case "map": ui.say(sim.socialMap(s).join("\n")); break;
       case "journal": ui.say(s.player.journal.slice(-12).join("\n") || "Nothing yet."); break;
       case "wait": ui.say("You let the time pass."); break;
@@ -125,6 +131,7 @@ export function createGame(out, { fresh = false } = {}) {
 
   // The clock runs in real time; every 15 game minutes the town takes a step.
   function startClock() {
+    clearInterval(timer);
     timer = setInterval(async () => {
       if (paused) return;
       carry += GAME_MIN_PER_SEC;
@@ -134,23 +141,28 @@ export function createGame(out, { fresh = false } = {}) {
       out.status(status());
       if (Math.floor(s.minute / 15) !== Math.floor(before / 15) && !busy) {
         busy = true;
+        out.beforeTick?.();
         try { await sim.tick(s, ui); save(); } catch (e) { ui.say(`[tick error] ${e.message}`); }
         busy = false;
+        out.afterTick?.();
       }
-      if (s.minute >= 20 * 60) await nightfall();
+      if (s.minute >= 20 * 60 && !paused) await nightfall();
     }, 1000);
   }
 
   async function nightfall() {
     paused = true;
     clearInterval(timer);
+    out.dusk?.();
     ui.say(`\nThe bells ring eight. Day ${s.day} is over. The town goes to bed and makes up its mind...`);
     const lines = await sim.endOfDay(s, ui);
     ui.say(lines.length ? lines.map((l) => "  - " + l).join("\n") : "  - A quiet night. Nobody's mind changed much.");
+    out.night?.(lines);
     if (s.banished) { save(); over = true; ui.say("\nThanks for playing."); out.ended?.(); return; }
     s.day += 1; s.minute = 8 * 60; s.player.location = "square"; s.player.talkingTo = null; s.player.following = null;
     for (const v of sim.alive(s)) v.location = v.schedule[8] || "square";
     save();
+    out.dawn?.();
     ui.say(`\nDay ${s.day} begins. You wake in your rented room and step out into the square. (Prototype: days after the first work, but the season ending isn't built yet.)`);
     paused = false;
     startClock();
@@ -159,9 +171,11 @@ export function createGame(out, { fresh = false } = {}) {
   return {
     intro: () => `Thistlewick. You are the newcomer. A day lasts ${Math.round(DAY_SECONDS / 60)} real minutes. Decisions: ${jev.mode()}. Type help.\n\n${look()}\n`,
     status,
+    state: () => s,
     save,
     start: startClock,
-    stop: () => { clearInterval(timer); save(); },
-    async handle(line) { try { await handle(line); } catch (e) { ui.say(`[error] ${e.message}`); } out.status(status()); },
+    stop: () => { clearInterval(timer); timer = null; save(); },
+    running: () => !!timer,
+    async handle(line, opts) { try { await handle(line, opts); } catch (e) { ui.say(`[error] ${e.message}`); } out.status(status()); },
   };
 }

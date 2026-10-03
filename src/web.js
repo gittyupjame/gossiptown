@@ -1,38 +1,178 @@
-// Thistlewick in the browser. Same game as main.js, shown on a web page.
+// Thistlewick in the browser: a top-down town you walk around, with a text box for talking.
 // Run:  node src/web.js        then open http://localhost:4747
-// The clock only runs while the page is open.
+// The game clock only runs while the page is open.
+//
+// The server owns the game (state, Jev, Claude) and decides which tile each villager
+// stands on. The page draws the town, walks people along paths to those tiles, and
+// sends back where the player is standing.
 
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import { createGame } from "./game.js";
+import * as sim from "./sim.js";
+import { SPOTS, HOUSES, START, zoneAt, walkable } from "./public/map.js";
 
 const PORT = Number(process.env.PORT || 4747);
-let lines = [];         // everything printed so far, so a reload shows the story
-let statusText = "";
-let over = false;
+const PUBLIC = new URL("./public/", import.meta.url);
+
+let lines = [];          // everything printed so far, so a reload shows the story
+let game, s;
+let spot = {};           // villager id -> the tile they are standing on or walking to
+let pairs = [];          // who stopped to talk to whom this quarter hour
+let ppos = { ...START }; // where the player is, in tiles
+let over = false, night = null, waiting = false; // waiting: the night is over, the day starts when you click
 const clients = new Set();
 
 function send(event, data) {
   for (const res of clients) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
-const out = {
-  say(text) { lines.push(text); if (lines.length > 2000) lines = lines.slice(-2000); send("say", text); },
-  status(text) { statusText = text; send("status", text); },
-  quit() { out.say("Saved. Close the tab whenever you like; the game picks up where you left off."); },
-  ended() { over = true; send("ended", true); },
+function log(text) {
+  lines.push(text);
+  if (lines.length > 2000) lines = lines.slice(-2000);
+  send("say", text);
+}
+
+// ---------- where villagers stand ----------
+
+const taken = (x, y, except) =>
+  Object.entries(spot).some(([id, p]) => id !== except && p && p.x === x && p.y === y) || (Math.floor(ppos.x) === x && Math.floor(ppos.y) === y);
+
+function placeSpot(v) {
+  if (v.gone) { spot[v.id] = null; return; }
+  if (v.location === "home") { spot[v.id] = { ...HOUSES[v.id] }; return; }
+  const list = SPOTS[v.location];
+  if (!list) { spot[v.id] = null; return; }
+  for (let i = 0; i < 40; i++) {
+    const p = list[Math.floor(Math.random() * list.length)];
+    if (!taken(p.x, p.y, v.id)) { spot[v.id] = { x: p.x, y: p.y }; return; }
+  }
+  spot[v.id] = { ...list[0] };
+}
+
+function besideTile(t, v, zone) {
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const x = t.x + dx, y = t.y + dy;
+    if (walkable(x, y) && !taken(x, y, v.id) && (!zone || zoneAt(x, y) === zone)) return { x, y };
+  }
+  return null;
+}
+
+const distTo = (p) => Math.hypot(ppos.x - (p.x + 0.5), ppos.y - (p.y + 0.5));
+
+// ---------- hooks the engine calls ----------
+
+const hooks = {
+  moved(v) { placeSpot(v); },
+  pair(a, b, place) {
+    if (!spot[a.id]) placeSpot(a);
+    const p = spot[a.id] && besideTile(spot[a.id], b, place);
+    if (p) spot[b.id] = p;
+    pairs.push([a.id, b.id]);
+  },
+  // Close up you hear every word; a bit further off you catch some of it. Walls block sound.
+  hearing(a, b, place) {
+    const pa = spot[a.id], pb = spot[b.id];
+    if (!pa || !pb) return "none";
+    const myZone = zoneAt(ppos.x, ppos.y);
+    const indoors = !["square", "market", "garden"].includes(place);
+    if (myZone && myZone !== place) return "none";
+    const d = Math.hypot(ppos.x - (pa.x + pb.x + 1) / 2, ppos.y - (pa.y + pb.y + 1) / 2);
+    if (d <= 3.5 && myZone === place) return "full";
+    if (d <= 8 && (myZone === place || !indoors || d <= 4)) return "part";
+    return "none";
+  },
+  overheard({ a, b, text, full }) {
+    log(`[${sim.first(s.people[a])} and ${sim.first(s.people[b])}, ${full ? "you hear every word" : "you catch part of it"}]`);
+    log(text);
+    send("overheard", { a, b, text });
+  },
+  bubble(id, text) { send("bubble", { id, text }); },
+  approach(v) {
+    const p = besideTile({ x: Math.floor(ppos.x), y: Math.floor(ppos.y) }, v);
+    if (p) spot[v.id] = p;
+  },
 };
 
-let game;
+function snapshot() {
+  return {
+    day: s.day, clock: sim.clock(s.minute), minute: s.minute,
+    place: s.player.location, talkingTo: s.player.talkingTo, bag: s.player.gifts,
+    people: sim.alive(s).map((v) => ({ id: v.id, name: v.name, first: sim.first(v), job: v.employed ? v.job : "out of work", home: v.location === "home", at: spot[v.id] })),
+    pairs, over, night: !!night,
+  };
+}
+
+const out = {
+  say: log,
+  status() { send("state", snapshot()); },
+  quit() { log("Saved. Close the tab whenever you like; the game picks up where you left off."); },
+  ended() { over = true; send("ended", true); },
+  hooks,
+  beforeTick() { pairs = []; },
+  afterTick() {
+    // people who are not talking drift around the place they are in
+    const busy = new Set(pairs.flat());
+    for (const v of sim.alive(s)) if (!busy.has(v.id) && v.id !== s.player.talkingTo && SPOTS[v.location] && Math.random() < 0.3) placeSpot(v);
+  },
+  dusk() { night = { lines: null }; pairs = []; send("dusk", true); },
+  night(lines) { night = { lines }; send("night", lines); },
+  dawn() {
+    night = null;
+    for (const v of sim.alive(s)) placeSpot(v);
+    ppos = { ...START };
+    s.player.pos = ppos;
+    waiting = true;
+    send("dawn", { pos: ppos, state: snapshot() });
+    setTimeout(() => waiting && game.stop(), 0);
+  },
+};
+
 function begin(fresh) {
   game?.stop();
-  lines = []; over = false;
+  lines = []; over = false; night = null; waiting = false; spot = {}; pairs = [];
   game = createGame(out, { fresh });
+  s = game.state();
+  ppos = s.player.pos || { ...START };
+  if (!s.player.pos && s.player.location !== "square") s.player.location = "square";
+  s.player.pos = ppos;
+  for (const v of sim.alive(s)) placeSpot(v);
   game.save();
-  out.say(game.intro());
-  out.status(game.status());
-  send("reset", { lines, status: statusText, over });
+  log(`Thistlewick. You are the newcomer. Walk with the arrow keys or WASD. Walk up to someone and press E.`);
+  send("reset", resetData());
   if (clients.size) game.start();
 }
+const resetData = () => ({ lines, state: snapshot(), pos: ppos, over, night: night?.lines || (night ? [] : null), waiting });
 begin(process.argv.includes("--new"));
+
+// ---------- the player ----------
+
+function movePlayer(x, y) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  ppos = { x, y };
+  s.player.pos = ppos;
+  if (s.player.talkingTo) {
+    const p = spot[s.player.talkingTo];
+    if (p && distTo(p) <= 3.5) return; // still close enough to keep talking
+    game.handle("bye");
+  }
+  const loc = zoneAt(x, y) || "road";
+  if (loc !== s.player.location) { s.player.location = loc; send("state", snapshot()); }
+}
+
+// Things you do to a person: talk, give, and anything typed while talking.
+async function act({ cmd, near, echo, speech }) {
+  if (over || night || typeof cmd !== "string") return;
+  if (near) {
+    const v = s.people[near];
+    if (!v || v.gone || !spot[v.id] || distTo(spot[v.id]) > 3) { log("They are too far away. Walk closer."); return; }
+    s.player.location = v.location;
+  }
+  if (echo) log(`> ${echo}`);
+  await game.handle(cmd.slice(0, 2000), { speech: !!speech });
+  send("state", snapshot());
+}
+
+// ---------- http ----------
 
 async function body(req) {
   let b = "";
@@ -40,81 +180,45 @@ async function body(req) {
   return b;
 }
 
-createServer(async (req, res) => {
-  if (req.method === "GET" && req.url === "/") {
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    return res.end(PAGE);
-  }
-  if (req.method === "GET" && req.url === "/events") {
-    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-    res.write(`event: reset\ndata: ${JSON.stringify({ lines, status: statusText, over })}\n\n`);
-    clients.add(res);
-    if (clients.size === 1 && !over) game.start();
-    req.on("close", () => { clients.delete(res); if (!clients.size) game.stop(); });
-    return;
-  }
-  if (req.method === "POST" && req.url === "/say") {
-    const text = (await body(req)).slice(0, 2000);
-    res.end("ok");
-    out.say(`> ${text}`);
-    await game.handle(text);
-    return;
-  }
-  if (req.method === "POST" && req.url === "/new") {
-    res.end("ok");
-    begin(true);
-    return;
-  }
-  res.writeHead(404); res.end();
-}).listen(PORT, "127.0.0.1", () => console.log(`Thistlewick is running at http://localhost:${PORT}`));
+const TYPES = { ".js": "text/javascript", ".html": "text/html; charset=utf-8", ".css": "text/css" };
 
-const PAGE = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Thistlewick</title>
-<style>
-  :root { --bg:#1b1a17; --fg:#e9e2d0; --dim:#9b937f; --you:#e8b860; --accent:#7fb27f; --panel:#25231f; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 ui-monospace, Menlo, monospace; height:100vh; display:flex; flex-direction:column; }
-  header { padding:10px 16px; background:var(--panel); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
-  header b { color:var(--accent); }
-  #status { color:var(--dim); }
-  #log { flex:1; overflow-y:auto; padding:16px; white-space:pre-wrap; word-wrap:break-word; }
-  .you { color:var(--you); }
-  .event { color:var(--dim); }
-  form { display:flex; gap:8px; padding:12px 16px; background:var(--panel); }
-  input { flex:1; font:inherit; padding:10px; background:var(--bg); color:var(--fg); border:1px solid #444; border-radius:6px; }
-  button { font:inherit; padding:8px 14px; background:#3a3a30; color:var(--fg); border:1px solid #555; border-radius:6px; cursor:pointer; }
-  .quick { display:flex; gap:6px; flex-wrap:wrap; padding:0 16px 10px; background:var(--panel); }
-  .quick button { padding:4px 10px; font-size:14px; }
-</style></head>
-<body>
-<header><span><b>Thistlewick</b> <span id="status"></span></span><button id="new">New game</button></header>
-<div id="log"></div>
-<form id="f"><input id="in" autocomplete="off" autofocus placeholder="Type a command, or what you say..."><button>Send</button></form>
-<div class="quick">
-  <button data-c="look">look</button><button data-c="help">help</button><button data-c="map">map</button>
-  <button data-c="journal">journal</button><button data-c="bag">bag</button><button data-c="listen">listen</button>
-  <button data-c="wait">wait</button><button data-c="bye">bye</button>
-</div>
-<script>
-  const log = document.getElementById("log"), input = document.getElementById("in"), statusEl = document.getElementById("status");
-  function add(text) {
-    const d = document.createElement("div");
-    if (text.startsWith("> ")) d.className = "you";
-    else if (text.startsWith("*") || text.startsWith("\\n[")) d.className = "event";
-    d.textContent = text;
-    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
-    log.appendChild(d);
-    if (atBottom) log.scrollTop = log.scrollHeight;
+createServer(async (req, res) => {
+  try {
+    if (req.method === "GET" && (req.url === "/" || /^\/[a-z]+\.(js|css|html)$/.test(req.url))) {
+      const file = req.url === "/" ? "index.html" : req.url.slice(1);
+      res.writeHead(200, { "content-type": TYPES[file.slice(file.lastIndexOf("."))], "cache-control": "no-cache" });
+      return res.end(readFileSync(new URL(file, PUBLIC)));
+    }
+    if (req.method === "GET" && req.url === "/events") {
+      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+      res.write(`event: reset\ndata: ${JSON.stringify(resetData())}\n\n`);
+      clients.add(res);
+      if (clients.size === 1 && !over && !night && !waiting) game.start();
+      req.on("close", () => { clients.delete(res); if (!clients.size && !night) game.stop(); });
+      return;
+    }
+    if (req.method === "POST" && req.url === "/pos") {
+      const { x, y } = JSON.parse(await body(req));
+      res.end("ok");
+      return movePlayer(x, y);
+    }
+    if (req.method === "POST" && req.url === "/act") {
+      const data = JSON.parse(await body(req));
+      res.end("ok");
+      return act(data);
+    }
+    if (req.method === "POST" && req.url === "/morning") {
+      res.end("ok");
+      if (waiting) { waiting = false; if (clients.size) game.start(); }
+      return;
+    }
+    if (req.method === "POST" && req.url === "/new") {
+      res.end("ok");
+      return begin(true);
+    }
+    res.writeHead(404); res.end();
+  } catch (e) {
+    console.error(e);
+    if (!res.headersSent) { res.writeHead(500); res.end(); }
   }
-  const es = new EventSource("/events");
-  es.addEventListener("reset", (e) => { const d = JSON.parse(e.data); log.innerHTML = ""; d.lines.forEach(add); statusEl.textContent = d.status; log.scrollTop = log.scrollHeight; });
-  es.addEventListener("say", (e) => add(JSON.parse(e.data)));
-  es.addEventListener("status", (e) => statusEl.textContent = JSON.parse(e.data));
-  es.addEventListener("ended", () => add("Press New game to start again."));
-  function send(text) { if (text.trim()) fetch("/say", { method: "POST", body: text }); }
-  document.getElementById("f").onsubmit = (e) => { e.preventDefault(); send(input.value); input.value = ""; input.focus(); };
-  document.querySelectorAll(".quick button").forEach((b) => b.onclick = () => { send(b.dataset.c); input.focus(); });
-  document.getElementById("new").onclick = () => { if (confirm("Start a fresh town? Your current game will be replaced.")) fetch("/new", { method: "POST" }); };
-</script>
-</body></html>`;
+}).listen(PORT, "127.0.0.1", () => console.log(`Thistlewick is running at http://localhost:${PORT}`));

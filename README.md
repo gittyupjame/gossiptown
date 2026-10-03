@@ -14,8 +14,12 @@ Needs Node 20+ and the `claude` CLI signed in (it writes the villagers' lines).
     npm start            # continues save.json if there is one
     node src/main.js --new   # fresh town
 
-Or play in the browser: `npm run web`, then open http://localhost:4747.
-The clock only runs while the page is open.
+Or play the map version in the browser: `npm run web`, then open
+http://localhost:4747. Walk around the town with the arrow keys or WASD. Walk
+up to someone and press E to talk, give a gift, or follow them. You type what
+you say in the box on the right. Stand close to people talking and you hear
+every word; a few steps away you only catch part of it. The clock only runs
+while the page is open, and each new day waits until you start it.
 
 With no key, or if Jev can't be reached, the game falls back to a rough offline
 stand-in so you can still click around. The stand-in can't actually understand

@@ -96,12 +96,13 @@ function routineAt(v, hour) {
 export async function tick(s, ui) {
   await deliverNotes(s, ui);
   const hour = Math.floor(s.minute / 60);
-  await Promise.all(alive(s).map((v) => move(s, v, hour, ui)));
+  // the person you are talking to stays put until you say goodbye
+  await Promise.all(alive(s).filter((v) => v.id !== s.player.talkingTo).map((v) => move(s, v, hour, ui)));
 
   // encounters: up to two pairs per place
   const jobs = [];
   for (const place of Object.keys(PLACES)) {
-    const here = shuffle(at(s, place));
+    const here = shuffle(at(s, place).filter((v) => v.id !== s.player.talkingTo));
     for (let i = 0; i + 1 < here.length && i < 4; i += 2) jobs.push(encounter(s, here[i], here[i + 1], place, ui));
   }
   await Promise.all(jobs);
@@ -139,6 +140,7 @@ async function move(s, v, hour, ui) {
     if (s.player.location === dest) ui.say(`${v.name} arrives.`);
     if (s.player.following === v.id && dest !== "home") { s.player.location = dest; ui.say(`You follow ${first(v)} to ${PLACES[dest].name}.`); }
     v.location = dest;
+    ui.moved?.(v);
   }
   // moods drift back toward calm
   v.mood.anger = Math.max(0, v.mood.anger - 0.15);
@@ -151,7 +153,11 @@ const WARMTH = ["much colder toward each other", "a bit colder", "about the same
 async function encounter(s, a, b, place, ui) {
   if (b.intent?.target === a.id && a.intent?.target !== b.id) [a, b] = [b, a];
   const rAB = s.rel[a.id][b.id], rBA = s.rel[b.id][a.id];
-  const playerHere = s.player.location === place;
+  ui.pair?.(a, b, place);
+  // How much the player hears: "full", "part" or "none". The map version decides by distance.
+  const hear = ui.hearing ? ui.hearing(a, b, place) : s.player.location === place ? (s.player.listening ? "full" : "part") : "none";
+  const playerHere = hear !== "none";
+  const listening = hear === "full";
   const shareable = Object.entries(a.knows).filter(([, k]) => k.conf >= 0.4).map(([id]) => s.rumors[id]).filter((r) => r.about !== a.id || Math.random() < 0.15).slice(-6);
   const rumorCriteria = { none: "Nothing in particular" };
   const rumorPrior = { none: 2 };
@@ -163,7 +169,7 @@ async function encounter(s, a, b, place, ui) {
   const state = {
     a: persona(s, a), b: persona(s, b),
     between_them: [feelings(s, a, b), feelings(s, b, a)],
-    newcomer: playerHere ? (s.player.listening ? "standing close, clearly listening" : "nearby") : "not here",
+    newcomer: playerHere ? (listening ? "standing close, clearly listening" : "nearby") : "not here",
     a_wants: grudge ? `${first(a)} came to have it out with ${first(b)}` : a.intent ? `${a.intent.kind} ${nameOf(s, a.intent.target)}` : "nothing special",
   };
   const qs = {
@@ -177,7 +183,7 @@ async function encounter(s, a, b, place, ui) {
     warmth: { type: "score", instructions: `After this talk, how do ${first(a)} and ${first(b)} feel about each other?`, criteria: WARMTH, prior: 2 + rAB.affinity * 0.2 },
     escalate: { type: "noul", instructions: `If they argue, it turns into a shoving fight.`, prior: Math.min(0.9, 0.05 + (a.mood.anger + b.mood.anger) * 0.12 + (rAB.affinity < -1 ? 0.15 : 0)) },
   };
-  if (playerHere && s.player.listening) qs.notice = { type: "noul", instructions: "They notice the newcomer eavesdropping on them.", prior: 0.35 };
+  if (listening) qs.notice = { type: "noul", instructions: "They notice the newcomer eavesdropping on them.", prior: 0.35 };
   const j = await jev.ask(state, qs, `meet:${a.id}+${b.id}`);
   if (!j.talk.yes) return;
 
@@ -234,12 +240,14 @@ async function encounter(s, a, b, place, ui) {
   if (playerHere) {
     const topicText = { small_talk: "small talk", share_rumor: "gossip", argue: `an argument; ${first(a)} is picking a fight`, complain: `${first(a)} complains about someone`, make_up: "trying to make up after bad feelings" }[topic];
     s.player.seen[`${a.id}|${b.id}`] = outcome;
-    const listening = s.player.listening;
     const noticed = j.notice?.yes;
     llm.overheard({ a, b, topic: topicText, rumorText: rumor?.text, aboutName: rumor ? nameOf(s, rumor.about) : null, outcome: fight ? "it turns into a shoving match" : outcome })
       .then((text) => {
-        ui.say(`\n[${first(a)} and ${first(b)}, ${listening ? "you listen in" : "you catch part of it"}]`);
-        ui.say(listening ? text : muffle(text));
+        if (ui.overheard) ui.overheard({ a: a.id, b: b.id, text: listening ? text : muffle(text), full: listening });
+        else {
+          ui.say(`\n[${first(a)} and ${first(b)}, ${listening ? "you listen in" : "you catch part of it"}]`);
+          ui.say(listening ? text : muffle(text));
+        }
         if (rumor) s.player.journal.push(`Day ${s.day} ${clock(s.minute)}: overheard ${first(a)} tell ${first(b)} that ${rumor.text}`);
       });
     if (noticed) {
@@ -269,11 +277,13 @@ async function brawl(s, a, b, place, ui) {
 
 // A villager comes to the newcomer with a grievance.
 async function approachPlayer(s, v, ui) {
+  ui.approach?.(v);
   const r = s.rel[v.id].player;
   const why = v.memory.filter((m) => /newcomer/.test(m)).slice(-3).join("; ") || "something they heard";
   const line = await llm.ask(`You are ${v.name}, the ${v.job} (${v.traits.join(", ")}; speaks: ${v.voice}). You ${feel(r.affinity)} the newcomer and ${trust(r.trust)} them.
 You walk up to the newcomer to confront them about: ${why}. Say it in 1 to 2 short sentences.`);
   ui.say(`\n${v.name} walks straight up to you: ${line}`);
+  ui.bubble?.(v.id, line);
   remember(v, s, "confronted the newcomer");
 }
 
