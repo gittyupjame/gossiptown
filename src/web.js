@@ -26,6 +26,7 @@ function begin(fresh) {
   game?.stop();
   lines = []; over = false;
   game = createGame(out, { fresh });
+  game.save();
   out.say(game.intro());
   out.status(game.status());
   send("reset", { lines, status: statusText, over });
