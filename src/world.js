@@ -1,88 +1,114 @@
-// The starting town. Code owns who people are; Jev decides what they do;
-// the LLM only writes the words they say.
+// The starting town. Thistlewick is a reality show: nine women and the newcomer (the
+// player) live in a small town, and every few days the town votes one of them out.
+// Code owns who people are; Jev decides what they do; Claude only writes the words.
 
-export const PLACES = {
-  square: { name: "the village square", desc: "A cobbled square around an old well. Everyone passes through." },
-  bakery: { name: "Marigold's bakery", desc: "Warm, small, smells of rye. A bench by the window." },
-  smithy: { name: "the smithy", desc: "Hot and loud. Sparks, an anvil, a water barrel." },
-  tavern: { name: "the Crooked Kettle tavern", desc: "Low beams, long tables, the town's real meeting hall." },
-  market: { name: "the market stalls", desc: "A row of stalls. Odette's is the biggest." },
-  garden: { name: "the herb garden", desc: "Juniper's garden at the edge of town. Quiet, a little wild." },
-  hall: { name: "the elder's hall", desc: "A stone hall where disputes are heard and town business is done." },
+export const SHOW = {
+  name: "Thistlewick",
+  tagline: "Who stays?",
+  host: { id: "honey", name: "Mayor Honey Bellweather", first: "Honey", voice: "bubbly game-show host, loves a dramatic pause, calls everyone 'my darlings'" },
 };
 
-// `work` is where someone works. Nobody has a fixed schedule: every quarter hour Jev
-// decides where each villager goes, from who they are, the time, and their plans.
+export const PLACES = {
+  plaza:      { name: "the town square",        desc: "A cobbled square around a fountain, with the gazebo stage where the vote happens." },
+  salon:      { name: "Curl Up & Dye salon",     desc: "Ivy's hair salon. Everyone talks while they sit in the chairs." },
+  cafe:       { name: "the Daisy Cup café",      desc: "Small tables under striped umbrellas. Good for being seen." },
+  bakery:     { name: "Sugarplum Bakery",        desc: "Marigold's bakery, with a bench out front." },
+  boutique:   { name: "Velvet Boutique",         desc: "Vivienne's dress shop. Expensive, and she wants you to know it." },
+  winebar:    { name: "the Rosé Garden",         desc: "Wren's wine bar, with a garden of tables under string lights." },
+  postoffice: { name: "the post office",         desc: "Odette's post office. Every letter in town passes through her hands." },
+  park:       { name: "Willow Park",             desc: "A park with a duck pond, benches and quiet corners." },
+  florist:    { name: "Petal & Thorn florist",   desc: "Juniper's flower shop at the edge of the park." },
+};
 
+// Each woman has a job, a personality, a voice, an agenda for the game and a secret.
+// None of this is a script: it all goes into the Jev states, and Jev decides what she does.
 export const VILLAGERS = [
   {
-    id: "brenna", work: "smithy", name: "Brenna Hale", job: "blacksmith", employer: null,
-    traits: ["gruff", "proud", "honest", "slow to trust", "quick-tempered when insulted"],
-    voice: "short blunt sentences, hates flattery",
-    secrets: [],
+    id: "vivienne", name: "Vivienne Ashcombe", job: "owner of the Velvet Boutique", work: "boutique",
+    traits: ["queen bee", "polished", "controlling", "charming in public, cruel in private", "never forgets a slight"],
+    voice: "sweet as syrup, calls everyone 'darling', every compliment has a hook in it",
+    agenda: "Stay on top. Keep a loyal follower or two, and get rid of anyone who could take her crown.",
+    secrets: ["Vivienne's boutique is nearly broke, and she has been borrowing money from Odette to hide it."],
   },
   {
-    id: "pippa", work: "smithy", name: "Pippa Fennel", job: "blacksmith's apprentice", employer: "brenna",
-    traits: ["eager", "gullible", "chatty", "wants to be liked", "looks up to Brenna"],
-    voice: "fast and excitable, says 'honest!' a lot",
-    secrets: [],
+    id: "pippa", name: "Pippa Fennel", job: "shop girl at the Velvet Boutique", work: "boutique",
+    traits: ["eager", "gullible", "chatty", "desperate to be liked", "copies whoever is winning"],
+    voice: "fast and bubbly, says 'literally' and 'oh my gosh' a lot",
+    agenda: "Stay close to whoever is strongest so she is never the target.",
+    secrets: ["Pippa has been telling Vivienne everything the others say about her."],
   },
   {
-    id: "marigold", work: "bakery", name: "Marigold Ashby", job: "baker", employer: null,
-    traits: ["anxious", "kind", "dislikes gossip", "conflict-avoidant", "very loyal to friends"],
-    voice: "soft, apologetic, trails off",
-    secrets: ["Marigold owes Odette a large sum of money and is months behind on repaying it."],
+    id: "ivy", name: "Ivy Marchetti", job: "hairdresser at Curl Up & Dye", work: "salon",
+    traits: ["loudmouth", "dramatic", "cannot keep a secret", "loves an audience", "picks fights for fun"],
+    voice: "loud, theatrical, gasps a lot, 'excuse me?!', 'oh she did NOT'",
+    agenda: "Be the centre of every drama. Take Vivienne down a peg.",
+    secrets: ["Ivy wrote the anonymous letter that got the last salon owner run out of town."],
   },
   {
-    id: "odette", work: "market", name: "Odette Crane", job: "merchant and moneylender", employer: null,
-    traits: ["sly", "greedy", "well-connected", "charming when it pays", "holds grudges"],
-    voice: "smooth, flattering, always hinting at a deal",
-    secrets: ["Odette uses a crooked scale at her market stall and shorts every customer."],
+    id: "wren", name: "Wren Tallow", job: "owner of the Rosé Garden wine bar", work: "winebar",
+    traits: ["warm on the surface", "nosy", "two-faced", "collects secrets", "everyone's 'best friend'"],
+    voice: "friendly and cosy, calls everyone 'love', always asks one question too many",
+    agenda: "Be everyone's confidante, then use what they tell her when the vote comes.",
+    secrets: ["Wren waters down the wine and charges full price."],
   },
   {
-    id: "wren", work: "tavern", name: "Wren Tallow", job: "tavern keeper", employer: null,
-    traits: ["warm", "nosy", "the town's gossip hub", "protective of her tavern", "loves a good story"],
-    voice: "friendly, calls everyone 'love', asks lots of questions",
-    secrets: [],
+    id: "sylvie", name: "Sylvie Moor", job: "barista at the Daisy Cup café", work: "cafe",
+    traits: ["bitter", "ambitious", "sharp-tongued", "resents anyone with money", "secretly insecure"],
+    voice: "dry and sarcastic, mutters cutting asides",
+    agenda: "Knock the rich girls out first. Win, and finally be the one people look at.",
+    secrets: ["Sylvie has been taking coins from the café till for weeks."],
   },
   {
-    id: "sylvie", work: "tavern", name: "Sylvie Moor", job: "tavern server", employer: "wren",
-    traits: ["bitter", "ambitious", "resentful of Wren", "sharp-tongued", "secretly insecure"],
-    voice: "dry, sarcastic, mutters asides",
-    secrets: ["Sylvie has been stealing coins from the tavern till for weeks."],
+    id: "marigold", name: "Marigold Ashby", job: "baker at Sugarplum Bakery", work: "bakery",
+    traits: ["sweet", "anxious", "passive-aggressive", "conflict-avoidant", "keeps a list of everyone who wronged her"],
+    voice: "soft and apologetic, trails off, a sting hidden in every 'no offence'",
+    agenda: "Fly under the radar and let the loud ones knock each other out.",
+    secrets: ["Marigold owes Odette a large sum of money and is months behind on paying it back."],
   },
   {
-    id: "hesper", work: "hall", name: "Elder Hesper Vane", job: "village elder", employer: null,
-    traits: ["stern", "fair", "values order above all", "distrusts outsiders", "hates being lied to"],
-    voice: "formal, measured, never wastes a word",
-    secrets: [],
+    id: "odette", name: "Odette Crane", job: "postmistress", work: "postoffice",
+    traits: ["sly", "calculating", "patient", "trades favours", "always knows more than she says"],
+    voice: "smooth and quiet, hints at what she knows, 'a little bird told me'",
+    agenda: "Make everyone owe her something, then call in the debts at the vote.",
+    secrets: ["Odette steams open other people's letters and reads them."],
   },
   {
-    id: "juniper", work: "garden", name: "Juniper Reed", job: "herbalist", employer: null,
-    traits: ["dreamy", "superstitious", "gentle", "a bit of an outsider herself", "notices small things"],
-    voice: "wandering, talks about omens and plants",
+    id: "juniper", name: "Juniper Reed", job: "florist at Petal & Thorn", work: "florist",
+    traits: ["dreamy", "superstitious", "quiet", "notices everything", "holds grudges in silence"],
+    voice: "soft and strange, talks about omens and flowers, then says something cutting",
+    agenda: "Watch, remember, and strike once at the right moment.",
     secrets: ["Juniper was run out of her last town after an accusation she won't talk about."],
+  },
+  {
+    id: "hesper", name: "Hesper Vane", job: "head of the garden club", work: "park",
+    traits: ["stern", "proud", "old guard", "hates being lied to", "thinks she should be in charge"],
+    voice: "formal and clipped, never wastes a word",
+    agenda: "Restore order. Vote out liars and troublemakers, starting with the newcomer.",
+    secrets: ["Hesper rigged last year's flower show so her roses would win."],
   },
 ];
 
 // Starting feelings. affinity and trust run from -3 to 3. Unlisted pairs start at
 // a mild small-town default.
 const START_REL = [
-  ["brenna", "odette", -2, -2, "Odette once cheated Brenna on an iron order; they have not forgiven it"],
-  ["brenna", "pippa", 1.5, 1, "master and apprentice"],
-  ["pippa", "brenna", 2.5, 2.5, "Pippa idolizes Brenna"],
-  ["marigold", "odette", -1, -1, "she owes her money and fears her"],
+  ["vivienne", "pippa", 0.5, 1, "a useful follower"],
+  ["pippa", "vivienne", 2.5, 2.5, "Pippa worships Vivienne"],
+  ["vivienne", "ivy", -2, -1.5, "rivals since Ivy laughed at her dress at the spring fair"],
+  ["ivy", "vivienne", -2, -2, "can't stand her airs"],
+  ["ivy", "wren", 1.5, 1, "gossip buddies"],
+  ["wren", "ivy", 1, 0, "useful because she can't keep her mouth shut"],
+  ["sylvie", "vivienne", -1.5, -1, "resents her money"],
+  ["sylvie", "wren", -1, -0.5, "used to work at the wine bar and quit after a row"],
+  ["wren", "sylvie", 0, -0.5, "an ex-employee who left on bad terms"],
+  ["marigold", "odette", -1, -1, "she owes her money and is afraid of her"],
   ["odette", "marigold", 0, -1, "a debtor who is late"],
+  ["odette", "vivienne", 0.5, 0, "Vivienne owes her money too"],
   ["marigold", "juniper", 2, 2, "close friends"],
   ["juniper", "marigold", 2, 2, "close friends"],
-  ["sylvie", "wren", -1, 0, "resents working for her"],
-  ["wren", "sylvie", 1, 1.5, "trusts her with the till"],
-  ["wren", "marigold", 1.5, 1.5, "old friends"],
-  ["hesper", "juniper", -0.5, -1, "wary of the newcomer-herbalist"],
-  ["odette", "hesper", 1, 0, "cultivates the elder's favor"],
+  ["hesper", "juniper", -0.5, -1, "wary of the strange florist"],
+  ["hesper", "ivy", -1, -1, "thinks Ivy is vulgar"],
+  ["odette", "hesper", 1, 0, "cultivates the old guard"],
   ["hesper", "odette", 0.5, 0.5, "finds her useful"],
-  ["sylvie", "odette", 1, 0.5, "drinking companions"],
-  ["odette", "sylvie", 0.5, 0, "a useful pair of ears"],
 ];
 
 export function newTown() {
@@ -91,20 +117,20 @@ export function newTown() {
     people[v.id] = {
       ...structuredClone(v),
       location: "home", // everyone wakes up at home
-      activity: "starting the day",
       mood: { anger: 0, fear: 0, cheer: 1 }, // 0..3 each
       knows: {},        // rumorId -> { conf 0..1, from, day, time }
-      memory: [],       // short lines of what happened to them
+      memory: [],       // short lines of what happened to her
       intent: null,     // a plan: { kind, target, rumor, why, promisedTo, now } set by decisions, acted on later
-      gone: false,      // moved away or banished
-      employed: true,
+      target: null,     // who she wants voted out next, decided by Jev at night
+      gone: false,      // voted out
+      lastApproach: -999, // game minute she last walked up to the newcomer
     };
   }
   const rel = {};
   const ids = [...Object.keys(people), "player"];
   for (const a of Object.keys(people)) {
     rel[a] = {};
-    for (const b of ids) if (a !== b) rel[a][b] = b === "player" ? { affinity: 0, trust: -0.5, note: "a newcomer nobody knows" } : { affinity: 0.5, trust: 0.5, note: "neighbors" };
+    for (const b of ids) if (a !== b) rel[a][b] = b === "player" ? { affinity: 0, trust: -0.5, note: "the new girl nobody knows" } : { affinity: 0.3, trust: 0.2, note: "neighbours" };
   }
   for (const [a, b, af, tr, note] of START_REL) rel[a][b] = { affinity: af, trust: tr, note };
 
@@ -115,13 +141,26 @@ export function newTown() {
     rumors[id] = { id, about: v.id, text: s, origin: "truth", isTrue: true, harm: -1.5, day: 0 };
     people[v.id].knows[id] = { conf: 1, from: "self", day: 0, time: "08:00" };
   }
-  // One secret has already leaked to one person.
-  people.wren.knows.r1 = { conf: 0.6, from: "odette", day: 0, time: "08:00" }; // Marigold's debt
+  // a few secrets have already leaked to one person each
+  const leak = (rid, who, from) => (people[who].knows[rid] = { conf: 0.7, from, day: 0, time: "08:00" });
+  leak("r6", "wren", "odette");     // Marigold's debt
+  leak("r1", "odette", "self");     // Odette knows Vivienne borrows from her
+  leak("r5", "wren", "self");       // Wren suspects Sylvie's till
+  leak("r2", "ivy", "wren");        // Ivy has heard Pippa reports to Vivienne
 
   return {
     day: 1, minute: 8 * 60, // game clock, minutes since midnight
     people, rel, rumors, nextRumor: n + 1,
-    player: { name: "the newcomer", location: "square", talkingTo: null, following: null, listening: false, journal: [], seen: {}, gifts: ["a loaf of rye", "a silver ribbon", "a pouch of 5 coins", "a jar of honey"] },
+    alliances: [],          // { a, b, day, real } pacts between two women; real=false means one side is faking
+    votes: [],              // past votes: { day, ballots: [{ voter, target }], out }
+    player: {
+      name: "the newcomer", location: "plaza", talkingTo: null, following: null, listening: false,
+      journal: [], seen: {},
+      knows: {},            // rumors the player has learned: rid -> { from, how, day, time }
+      claims: [],           // things the player told people: { rid, to, day, time }
+      promises: {},         // what each woman told the player: id -> { ally: bool, voteFor: id|null, day }
+      gone: false,
+    },
     events: [], // { day, time, place, text, witnesses }
   };
 }
