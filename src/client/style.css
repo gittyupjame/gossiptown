@@ -229,3 +229,12 @@ body.cinema #hud, body.cinema #hint, body.cinema #chyron { opacity: 0; pointer-e
 }
 
 .set-note { font-size: 13px; text-align: left; margin-top: 6px; }
+
+#votecards { position: fixed; left: 50%; bottom: 66px; transform: translateX(-50%); display: none; gap: 8px; z-index: 7; max-width: calc(100% - 32px); overflow-x: auto; padding: 6px 4px; }
+#votecards.show { display: flex; }
+#votecards button { flex: 0 0 auto; width: 76px; border: 3px solid transparent; border-radius: 16px; background: var(--card); box-shadow: var(--shadow); padding: 6px 4px 7px; font: 600 13px Fredoka, system-ui, sans-serif; color: var(--ink); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: transform .15s, border-color .15s; }
+#votecards button img { width: 54px; height: 54px; border-radius: 50%; background: #ffe9f0; }
+#votecards button:hover, #votecards button:focus-visible { transform: translateY(-3px); outline: none; border-color: var(--pink2); }
+#votecards button.on { border-color: var(--pink); transform: translateY(-5px); }
+#votecards button.confirm { background: #ffe1ec; }
+#votecards button.confirm span::after { content: " ✓"; }

@@ -202,7 +202,7 @@ export function newTown({ playerName = "Rosie" } = {}) {
   const ids = [...Object.keys(people), "player"];
   for (const a of Object.keys(people)) {
     rel[a] = {};
-    for (const b of ids) if (a !== b) rel[a][b] = b === "player" ? { affinity: 0, trust: -0.5, note: "the new girl nobody knows" } : { affinity: 0.3, trust: 0.3, note: "neighbors" };
+    for (const b of ids) if (a !== b) rel[a][b] = b === "player" ? { affinity: 0.1, trust: 0, note: "the new girl, a blank slate so far" } : { affinity: 0.3, trust: 0.3, note: "neighbors" };
   }
   for (const [a, b, af, tr, note] of START_REL) rel[a][b] = { affinity: af, trust: tr, note };
 

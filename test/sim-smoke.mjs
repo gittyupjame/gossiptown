@@ -6,7 +6,7 @@ const sim = await import("../src/core/sim.js");
 const events = [];
 const ui = {
   headline: (t) => events.push("HEADLINE " + t),
-  hearing: () => (Math.random() < 0.3 ? "full" : "none"),
+  hearing: () => (Math.random() < 0.05 ? "full" : "none"), // the player only overhears now and then
   distance: () => 10,
   exchange: ({ a, b, lines }) => events.push(`EXCHANGE ${a}/${b}: ` + lines.map((l) => `${l.id}: ${l.text}`).join(" | ")),
   approach: (v, line, p) => events.push(`APPROACH ${v.id} (${p}): ${line}`),

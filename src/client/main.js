@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { renderer, camera, setTime, updateSky, resize, env } from "./scene.js";
 import { buildTown, updateTown, setClockHands } from "./town.js";
-import { makeCharacter, Walker, portraits, turn } from "./people.js";
+import { makeCharacter, Walker, portraits, turn, setXray } from "./people.js";
 import * as B from "./bubbles.js";
 import * as H from "./hud.js";
 import * as L from "./layout.js";
@@ -655,7 +655,8 @@ const voteCtx = {
     return new Promise((resolve) => {
       mode = "vote-pick";
       let chosen = null, confirm = null;
-      const bound = (x, z) => { const d = Math.hypot(x - L.FIREPIT.x, z - L.FIREPIT.z); return d < 5.2 && d > 2.0; };
+      const CENTRE_X = L.FIREPIT.x, CENTRE_Z = L.FIREPIT.z;
+      const bound = (x, z) => { const d = Math.hypot(x - CENTRE_X, z - CENTRE_Z); return d < 5.2 && d > 2.0; };
       cam.mode = "follow";
       const tick = (dt) => {
         const pv = movePlayer(dt, bound);
@@ -667,13 +668,34 @@ const voteCtx = {
         for (const id of cands) { const w = people[id].walker; const d = Math.hypot(w.x - me.walker.x, w.z - me.walker.z); if (d < bd) { bd = d; best = id; } }
         for (const id of cands) { people[id].model.ring.visible = id === best; B.tagState(id, { show: true, near: id === best }); }
         if (best !== chosen) { chosen = best; confirm = null; }
-        H.hint(chosen ? (confirm ? `<kbd>Enter</kbd> again to vote out <b>${first(chosen)}</b>` : `<kbd>Enter</kbd> vote for ${first(chosen)}`) : "Walk up to the woman you want gone");
+        H.hint(chosen ? (confirm ? `<kbd>Enter</kbd> again to vote out <b>${first(chosen)}</b>` : `<kbd>Enter</kbd> vote for ${first(chosen)}`) : "Walk up to the woman you want gone, or click her card");
       };
       frameFns.add(tick);
+      // or pick from the portrait cards: one click walks you over, a second casts it
+      const cardsEl = document.getElementById("votecards");
+      cardsEl.innerHTML = "";
+      const cards = {};
+      for (const id of cands) {
+        const b = document.createElement("button");
+        b.innerHTML = `<img alt=""><span></span>`;
+        b.querySelector("img").src = pics[id] || "";
+        b.querySelector("span").textContent = first(id);
+        b.onclick = () => {
+          if (chosen === id) return onEnter();
+          const w = people[id].walker, dx = CENTRE_X - w.x, dz = CENTRE_Z - w.z, d = Math.hypot(dx, dz) || 1;
+          me.walker.x = w.x + (dx / d) * 1.3; me.walker.z = w.z + (dz / d) * 1.3;
+        };
+        cards[id] = b;
+        cardsEl.appendChild(b);
+      }
+      cardsEl.classList.add("show");
+      const syncCards = () => { for (const id of cands) { cards[id].classList.toggle("on", id === chosen); cards[id].classList.toggle("confirm", id === confirm); } };
+      frameFns.add(syncCards);
       const onEnter = () => {
         if (!chosen) return;
         if (confirm !== chosen) { confirm = chosen; B.say("player", `${first(chosen)}...?`, { name: S().player.name, color: colorOf("player"), you: true, hold: 1.5 }); return; }
-        frameFns.delete(tick); enterFns.delete(onEnter);
+        frameFns.delete(tick); frameFns.delete(syncCards); enterFns.delete(onEnter);
+        cardsEl.classList.remove("show");
         for (const id of cands) { people[id].model.ring.visible = false; B.tagState(id, { show: false }); }
         H.hint("");
         mode = "vote";
@@ -690,7 +712,9 @@ async function startVote() {
   H.showHud(false);
   H.hint("");
   B.hushAll();
+  setXray(false);
   const result = await runVote(voteCtx);
+  setXray(true);
   for (const p of Object.values(people)) { if (p.revived) { p.revived = false; } p.walker.face = null; }
   const s = S();
   for (const v of Object.values(s.people)) if (v.gone) { const p = people[v.id]; p.gone = true; p.model.root.visible = false; }

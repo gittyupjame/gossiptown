@@ -51,7 +51,15 @@ export async function runVote(ctx) {
   const host = ctx.walker("primrose");
   host.x = L.HOST_SPOT.x; host.z = L.HOST_SPOT.z; host.face = { x: CENTRE.x, z: CENTRE.z }; host.heading = 0;
   ctx.cam.orbit(CENTRE, 13, 7.5, 0.12);
-  game.startBallots();
+  // while the player chooses, Jev casts the cast's ballots and Claude writes their lines
+  let spoken = {};
+  game.startBallots().then((ballots) => {
+    const items = Object.entries(ballots).filter(([id]) => s.people[id]).map(([id, target]) => {
+      const v = s.people[id];
+      return { v, target: first(target), feeling: sim.feel(s.rel[id]?.[target]?.affinity ?? 0), why: v.votePlan?.target === target ? v.votePlan.why : "" };
+    });
+    return voice.ballotLines({ items, playerName: s.player.name, finale });
+  }).then((lines) => { spoken = lines || {}; }).catch(() => {});
   await ctx.wait(400);
   await H.fade(false);
   H.voteHud(finale ? "The Finale" : "The Vote", `Night ${s.day}`);
@@ -79,7 +87,7 @@ export async function runVote(ctx) {
   if (!finale && !s.player.out) {
     H.cinema(false);
     H.showHud(false);
-    H.voteHud("Cast your vote", "Walk up to the woman you want gone and press Enter");
+    H.voteHud("Cast your vote", "Walk up to the woman you want gone, or pick her card");
     H.tip("vote");
     playerBallot = await ctx.playerPicks(candidates.filter((id) => id !== "player"), seats);
     H.voteHud(null);
@@ -115,7 +123,8 @@ export async function runVote(ctx) {
       if (!skipping) {
         const vw = ctx.walker(voter, true);
         ctx.cam.shot(vec(vw.x, 1.4, vw.z), 4.2, { from: CENTRE });
-        const line = voter === "player" ? `${first(target)}.` : ballotLine(s, voter, target, finale);
+        const own = ri === 0 && result.rounds[0].ballots[voter] === target ? spoken[voter] : null;
+        const line = voter === "player" ? `${first(target)}.` : own || ballotLine(s, voter, target, finale);
         B.say(voter, line, { name: voter === "player" ? s.player.name : first(voter), color: voter === "player" ? "#e86f5a" : "#ff6f9c", you: voter === "player", hold: 1.2 });
         await ctx.wait(1100);
         await flyBallot(ctx, voter, target);

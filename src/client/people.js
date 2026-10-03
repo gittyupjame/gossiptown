@@ -17,6 +17,14 @@ const S = {
 };
 const black = "#2a1e2a";
 
+// A see-through silhouette for anyone standing behind a building. It draws only where
+// something is already in front of it, and characters draw after it (renderOrder), so
+// a visible character covers her own silhouette and only the hidden parts show.
+const xrayMat = new THREE.MeshBasicMaterial({ color: "#a77bb0", side: THREE.BackSide, depthFunc: THREE.GreaterDepth, depthWrite: false, fog: false });
+
+// off during the vote ceremony, where stumps and torches would cut every close-up
+export function setXray(on) { xrayMat.visible = on; }
+
 // A part is a list of shapes that get merged into one mesh per material.
 class Part {
   constructor() { this.items = []; }
@@ -48,7 +56,13 @@ class Part {
       mesh.castShadow = true;
       g.add(mesh);
     }
-    if (outlines.length) g.add(new THREE.Mesh(mergeGeometries(outlines), outlineMat));
+    if (outlines.length) {
+      const hull = mergeGeometries(outlines);
+      g.add(new THREE.Mesh(hull, outlineMat));
+      const xray = new THREE.Mesh(hull, xrayMat);
+      xray.userData.xray = true;
+      g.add(xray);
+    }
     return g;
   }
 }
@@ -311,6 +325,7 @@ export function makeCharacter(look, { idle = "none", speed = 1 } = {}) {
     if (talking && idle !== "arms" && idle !== "chatter" && idle !== "notes") { arms[1].rotation.x = -0.4 + Math.sin(t * 2.6) * 0.35; }
   }
 
+  root.traverse((o) => { if (o.isMesh) o.renderOrder = o.userData.xray ? 1 : 2; });
   return {
     root, rig, head, ring, update,
     lookAt(p) { st.look = p; },

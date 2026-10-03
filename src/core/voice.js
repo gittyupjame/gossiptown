@@ -39,7 +39,27 @@ const STYLE = (playerName) => `You write dialogue for "Gossiptown", a cozy-looki
 The cast: ${cast()}. The host is ${HOST.name}. The newcomer (the player) is called ${playerName}. Never invent other named townsfolk.
 Write plain spoken words only: no quotation marks, no stage directions, no asterisks, no emoji, no narration.`;
 
-async function raw(prompt, { maxMs = 30000, onText } = {}) {
+// At most three Claude calls run at once. Lines the player is waiting on (a reply, a
+// walk-up, the vote) jump ahead of background chatter, which would otherwise pile up
+// and make every line late.
+const AT_ONCE = 3;
+let running = 0;
+const queue = []; // { pri, go }
+function slot(pri) {
+  return new Promise((go) => { queue.push({ pri, go }); queue.sort((a, b) => b.pri - a.pri); pump(); });
+}
+function pump() { while (running < AT_ONCE && queue.length) { running++; queue.shift().go(); } }
+const PRI = { player: 2, vote: 1, background: 0 };
+
+async function raw(prompt, { maxMs = 30000, onText, pri = "background" } = {}) {
+  if (!backend) { stats.fallbacks++; return null; }
+  // background chatter that would wait behind a long queue is not worth writing
+  if (pri === "background" && queue.length >= 6) { stats.fallbacks++; return null; }
+  await slot(PRI[pri] ?? 0);
+  try { return await call(prompt, { maxMs, onText }); } finally { running--; pump(); }
+}
+
+async function call(prompt, { maxMs, onText }) {
   stats.calls++;
   const t0 = performance.now();
   try {
@@ -89,7 +109,7 @@ ${playerName} says: ${line}
 How you respond: ${stance}. ${react.join(" ")}
 ${plan ? `You have decided to ${plan}. You may say so.` : `You have not decided to do anything about this.${otherPlan ? ` (You already mean to ${otherPlan}; mention it only if it fits.)` : ""}`}
 ${ONLY}
-Reply as ${first(v)} in 1 to 2 short sentences, in your own voice. Keep it under 30 words.`, { onText });
+Reply as ${first(v)} in 1 to 2 short sentences, in your own voice. Keep it under 30 words.`, { onText, pri: "player" });
   return text || phrase.reply(ctx);
 }
 
@@ -103,7 +123,7 @@ You are ${describe(v)}
 What you think of ${playerName}: ${opinion}.
 You walk straight up to ${playerName} to ${purpose}${detail ? `: ${detail}` : ""}.
 ${ONLY}
-Say your opening line as ${first(v)}, 1 to 2 short sentences, under 25 words.`, { maxMs: 12000 });
+Say your opening line as ${first(v)}, 1 to 2 short sentences, under 25 words.`, { maxMs: 12000, pri: "player" });
   return text || phrase.opener(ctx);
 }
 
@@ -139,7 +159,7 @@ export async function asStory({ line, aboutName, history, playerName }) {
   const text = await raw(`Recent conversation:
 ${history.slice(-6).join("\n") || "(none)"}
 ${playerName} just said: ${line}
-Write what ${playerName} is claiming about ${aboutName} as one plain sentence that names ${aboutName} and makes sense on its own. Keep the meaning, add nothing. Output only the sentence.`, { maxMs: 20000 });
+Write what ${playerName} is claiming about ${aboutName} as one plain sentence that names ${aboutName} and makes sense on its own. Keep the meaning, add nothing. Output only the sentence.`, { maxMs: 20000, pri: "player" });
   return text;
 }
 
@@ -159,8 +179,22 @@ export async function partingShot({ v, playerName, votedBy, betrayedBy }) {
 
 You are ${describe(v)}
 You have just been voted out of Gossiptown and must leave town tonight. Voted against you: ${votedBy.join(", ") || "nobody you expected"}.${betrayedBy.length ? ` You feel betrayed by ${betrayedBy.join(", ")}.` : ""}
-Say your exit line as ${first(v)}: one or two dramatic sentences, under 28 words.`, { maxMs: 20000 });
+Say your exit line as ${first(v)}: one or two dramatic sentences, under 28 words.`, { maxMs: 20000, pri: "vote" });
   return text || phrase.parting({ v, betrayedBy });
+}
+
+// Every cast member's line as her ballot is read out, written in one call while the
+// player is still choosing. Returns { voterId: line } for the lines that came back.
+export async function ballotLines({ items, playerName, finale }) {
+  if (!items.length) return {};
+  const text = await raw(`${STYLE(playerName)}
+
+It is ${finale ? "the finale. Women already voted out are the jury and each names the woman who should win the season" : "vote night at the firepit. Each woman names the woman she wants sent home"}. The host reads each ballot aloud and the voter says one short line as hers is read.
+${items.map((it) => `- ${describe(it.v)} Votes for ${it.target}. How she feels about her: ${it.feeling}.${it.why ? ` Why: ${it.why}.` : ""}`).join("\n")}
+Write one line for each voter, each starting with her first name and a colon, in her own voice. Under 14 words each. Mention who she votes for by first name. No other text.`, { maxMs: 25000, pri: "vote" });
+  const out = {};
+  for (const l of parseLines(text, items.map((it) => it.v))) out[l.id] = l.text;
+  return out;
 }
 
 export async function voteReaction({ v, voter, playerName, wasAlly }) {

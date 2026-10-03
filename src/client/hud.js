@@ -81,7 +81,7 @@ export const TIPS = {
   "vote-pitch": { icon: "🗳️", title: "Lobbying", text: "Whether she really votes your way depends on how much she likes and trusts you, and whether she was lying. Votes are public, so broken promises get exposed." },
   caught: { icon: "👀", title: "Caught snooping", text: "They noticed you hovering. Being caught makes people trust you less. Hang back a little further next time." },
   bell: { icon: "🔔", title: "The bell rings!", text: "Tonight is a vote. Everyone heads to the firepit at sundown. Last chance to lock in your pacts." },
-  vote: { icon: "🔥", title: "Cast your vote", text: "Walk up to the woman you want gone and press <kbd>Enter</kbd>, then <kbd>Enter</kbd> again to lock it in. The votes are read out one by one." },
+  vote: { icon: "🔥", title: "Cast your vote", text: "Walk up to the woman you want gone (or click her card) and press <kbd>Enter</kbd>, then <kbd>Enter</kbd> again to lock it in. The votes are read out one by one." },
   night: { icon: "🌙", title: "Overnight", text: "Every night each woman lies awake and makes up her mind: grudges, quitting, making peace, who has to go. You hear about the public stuff by morning." },
   tracker: { icon: "📌", title: "Your Gossip Board", text: "<b>The Tea</b>: everything you've heard. <b>My Rumors</b>: what you started and how far it spread. <b>Pacts</b>: who promised you what. <b>The Cast</b>: how each woman feels about you." },
   fight: { icon: "💢", title: "A fight!", text: "Everyone who saw it will be talking about it. Fights make enemies, and enemies make votes." },
