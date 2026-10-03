@@ -2,6 +2,7 @@
 // after Jev and code have decided what the line has to do.
 
 import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 import { VILLAGERS } from "./world.js";
 
 const MODEL = process.env.CLAUDE_MODEL || "haiku";
@@ -10,7 +11,7 @@ const FAKE = process.env.GOSSIP_FAKE_LLM === "1";
 export const stats = { calls: 0, ms: 0 };
 
 const STYLE = () => `Setting: Thistlewick, a small cozy-fantasy village. Keep it grounded and human: no magic spells, no romance.
-The only people in town are: ${VILLAGERS.map((v) => `${v.name} (${v.job})`).join(", ")}, plus the player, a newcomer. Do not invent other named townsfolk.
+Everyone in town is a woman (she/her), and so is the newcomer. The only people in town are: ${VILLAGERS.map((v) => `${v.name} (${v.job})`).join(", ")}, plus the player, a newcomer. Do not invent other named townsfolk.
 Write plain text only. No quotes around lines, no stage directions in asterisks, no narration unless asked.`;
 
 export function ask(prompt, { timeoutMs = 45000 } = {}) {
@@ -18,7 +19,10 @@ export function ask(prompt, { timeoutMs = 45000 } = {}) {
   const t0 = Date.now();
   if (FAKE) return Promise.resolve(fakeLine(prompt));
   return new Promise((resolve) => {
-    const p = spawn("claude", ["-p", "--model", MODEL], { stdio: ["pipe", "pipe", "pipe"] });
+    // A bare call: no tools, no MCP servers, no hooks or user settings, nothing saved.
+    // Loading all of those made each line take minutes instead of seconds.
+    const p = spawn("claude", ["-p", "--model", MODEL, "--tools", "", "--strict-mcp-config", "--setting-sources", "", "--no-session-persistence", "--no-chrome"],
+      { stdio: ["pipe", "pipe", "pipe"], cwd: tmpdir() });
     let out = "";
     const timer = setTimeout(() => { p.kill(); resolve("..."); }, timeoutMs);
     p.stdout.on("data", (d) => (out += d));

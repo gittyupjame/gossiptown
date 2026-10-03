@@ -13,12 +13,12 @@ const ui = { say: (t) => { out.push(t); console.log(t); } };
 const script = {
   "08:15": async () => { s.player.location = "tavern"; s.player.talkingTo = "wren"; },
   "08:30": async () => say("wren", "Morning! I'm new here. This place is lovely."),
-  "08:45": async () => say("wren", "I hate to say it, but I saw Silas pocketing coins from your till last night."),
-  "09:30": async () => { sim.leaveNote(s, s.people.brannoc, "Odo's scale is crooked. He has been cheating the whole town, you included."); console.log("> note left for Brannoc"); },
-  "10:30": async () => { s.player.location = "smithy"; s.player.talkingTo = "pip"; },
-  "10:45": async () => say("pip", "Pip, between us, Odo told me Brannoc's work is shoddy and overpriced."),
+  "08:45": async () => say("wren", "I hate to say it, but I saw Sylvie pocketing coins from your till last night."),
+  "09:30": async () => { sim.leaveNote(s, s.people.brenna, "Odette's scale is crooked. She has been cheating the whole town, you included."); console.log("> note left for Brenna"); },
+  "10:30": async () => { s.player.location = "smithy"; s.player.talkingTo = "pippa"; },
+  "10:45": async () => say("pippa", "Pippa, between us, Odette told me Brenna's work is shoddy and overpriced."),
   "12:00": async () => { s.player.location = "tavern"; s.player.listening = true; console.log("> listening at the tavern"); },
-  "14:00": async () => { s.player.location = "market"; console.log("> " + await sim.doAction(s, "knock over a basket of apples at Odo's stall", ui)); },
+  "14:00": async () => { s.player.location = "market"; console.log("> " + await sim.doAction(s, "knock over a basket of apples at Odette's stall", ui)); },
   "18:00": async () => { s.player.location = "tavern"; s.player.listening = true; },
 };
 async function say(id, line) {

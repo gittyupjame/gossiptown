@@ -93,7 +93,7 @@ export function createGame(out, { fresh = false } = {}) {
         const v = sim.findPerson(s, arg);
         if (!v || v.location !== s.player.location) { ui.say("They aren't here."); break; }
         s.player.talkingTo = v.id;
-        ui.say(`You approach ${v.name}. Type what you want to say. "bye" to stop.`);
+        ui.say(`You start talking to ${v.name}.`);
         break;
       }
       case "bye": if (s.player.talkingTo) ui.say(`You leave ${sim.first(s.people[s.player.talkingTo])} be.`); s.player.talkingTo = null; break;

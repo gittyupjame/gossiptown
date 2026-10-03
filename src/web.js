@@ -74,7 +74,9 @@ const hooks = {
   moved(v) { placeSpot(v); },
   pair(a, b, place) {
     if (!spot[a.id]) placeSpot(a);
-    const p = spot[a.id] && besideTile(spot[a.id], b, place);
+    // b walks over to a, unless they are already standing together
+    const near = spot[a.id] && spot[b.id] && dist(spot[a.id].x, spot[a.id].y, spot[b.id].x, spot[b.id].y) <= 1.5;
+    const p = !near && spot[a.id] && besideTile(spot[a.id], b, place);
     if (p) spot[b.id] = p;
     pairs.push([a.id, b.id]);
   },
@@ -119,9 +121,13 @@ const out = {
   hooks,
   beforeTick() { pairs = []; },
   afterTick() {
-    // people who are not talking drift around the place they are in
+    // now and then someone who is not talking takes a few steps within the place they are in
     const busy = new Set(pairs.flat());
-    for (const v of sim.alive(s)) if (!busy.has(v.id) && v.id !== s.player.talkingTo && SPOTS[v.location] && Math.random() < 0.3) placeSpot(v);
+    for (const v of sim.alive(s)) {
+      if (busy.has(v.id) || v.id === s.player.talkingTo || !SPOTS[v.location] || !spot[v.id] || Math.random() > 0.08) continue;
+      const close = SPOTS[v.location].filter((p) => dist(p.x, p.y, spot[v.id].x, spot[v.id].y) <= 2.5 && !taken(p.x, p.y, v.id));
+      if (close.length) spot[v.id] = { ...close[Math.floor(Math.random() * close.length)] };
+    }
   },
   dusk() { night = { lines: null }; pairs = []; send("dusk", true); },
   night(lines) { night = { lines }; send("night", lines); },
@@ -146,7 +152,7 @@ function begin(fresh) {
   s.player.pos = ppos;
   for (const v of sim.alive(s)) placeSpot(v);
   game.save();
-  log(`Thistlewick. You are the newcomer. Walk with the arrow keys or WASD. Walk up to someone and press E.`);
+  log(`Thistlewick. You are the newcomer. Walk with the arrow keys or WASD. Walk up to someone and press Enter to talk. Press P to pause.`);
   send("reset", resetData());
   syncClock();
 }
@@ -169,11 +175,14 @@ function movePlayer(x, y) {
 }
 
 // Things you do to a person: talk, give, and anything typed while talking.
-async function act({ cmd, near, echo, speech }) {
+async function act({ cmd, near, echo, speech, at }) {
   if (over || night || typeof cmd !== "string") return;
   if (paused) { log("The game is paused. Press Play to carry on."); return; }
   if (near) {
     const v = s.people[near];
+    // starting a conversation stops her where she stands (the page says where that is, since she may be mid-walk)
+    const starting = v && !v.gone && at && /^talk /.test(cmd) && walkable(at.x, at.y) && distTo(at) <= 3;
+    if (starting) spot[v.id] = { x: wrapX(at.x), y: at.y };
     if (!v || v.gone || !spot[v.id] || distTo(spot[v.id]) > 3) { log("They are too far away. Walk closer."); return; }
     s.player.location = v.location;
   }

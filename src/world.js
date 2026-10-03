@@ -6,7 +6,7 @@ export const PLACES = {
   bakery: { name: "Marigold's bakery", desc: "Warm, small, smells of rye. A bench by the window." },
   smithy: { name: "the smithy", desc: "Hot and loud. Sparks, an anvil, a water barrel." },
   tavern: { name: "the Crooked Kettle tavern", desc: "Low beams, long tables, the town's real meeting hall." },
-  market: { name: "the market stalls", desc: "A row of stalls. Odo's is the biggest." },
+  market: { name: "the market stalls", desc: "A row of stalls. Odette's is the biggest." },
   garden: { name: "the herb garden", desc: "Juniper's garden at the edge of town. Quiet, a little wild." },
   hall: { name: "the elder's hall", desc: "A stone hall where disputes are heard and town business is done." },
 };
@@ -16,14 +16,14 @@ export const PLACES = {
 
 export const VILLAGERS = [
   {
-    id: "brannoc", work: "smithy", name: "Brannoc Hale", job: "blacksmith", employer: null,
+    id: "brenna", work: "smithy", name: "Brenna Hale", job: "blacksmith", employer: null,
     traits: ["gruff", "proud", "honest", "slow to trust", "quick-tempered when insulted"],
     voice: "short blunt sentences, hates flattery",
     secrets: [],
   },
   {
-    id: "pip", work: "smithy", name: "Pip Fennel", job: "blacksmith's apprentice", employer: "brannoc",
-    traits: ["eager", "gullible", "chatty", "wants to be liked", "looks up to Brannoc"],
+    id: "pippa", work: "smithy", name: "Pippa Fennel", job: "blacksmith's apprentice", employer: "brenna",
+    traits: ["eager", "gullible", "chatty", "wants to be liked", "looks up to Brenna"],
     voice: "fast and excitable, says 'honest!' a lot",
     secrets: [],
   },
@@ -31,13 +31,13 @@ export const VILLAGERS = [
     id: "marigold", work: "bakery", name: "Marigold Ashby", job: "baker", employer: null,
     traits: ["anxious", "kind", "dislikes gossip", "conflict-avoidant", "very loyal to friends"],
     voice: "soft, apologetic, trails off",
-    secrets: ["Marigold owes Odo a large sum of money and is months behind on repaying it."],
+    secrets: ["Marigold owes Odette a large sum of money and is months behind on repaying it."],
   },
   {
-    id: "odo", work: "market", name: "Odo Crane", job: "merchant and moneylender", employer: null,
+    id: "odette", work: "market", name: "Odette Crane", job: "merchant and moneylender", employer: null,
     traits: ["sly", "greedy", "well-connected", "charming when it pays", "holds grudges"],
     voice: "smooth, flattering, always hinting at a deal",
-    secrets: ["Odo uses a crooked scale at his market stall and shorts every customer."],
+    secrets: ["Odette uses a crooked scale at her market stall and shorts every customer."],
   },
   {
     id: "wren", work: "tavern", name: "Wren Tallow", job: "tavern keeper", employer: null,
@@ -46,10 +46,10 @@ export const VILLAGERS = [
     secrets: [],
   },
   {
-    id: "silas", work: "tavern", name: "Silas Moor", job: "tavern server", employer: "wren",
+    id: "sylvie", work: "tavern", name: "Sylvie Moor", job: "tavern server", employer: "wren",
     traits: ["bitter", "ambitious", "resentful of Wren", "sharp-tongued", "secretly insecure"],
     voice: "dry, sarcastic, mutters asides",
-    secrets: ["Silas has been stealing coins from the tavern till for weeks."],
+    secrets: ["Sylvie has been stealing coins from the tavern till for weeks."],
   },
   {
     id: "hesper", work: "hall", name: "Elder Hesper Vane", job: "village elder", employer: null,
@@ -68,21 +68,21 @@ export const VILLAGERS = [
 // Starting feelings. affinity and trust run from -3 to 3. Unlisted pairs start at
 // a mild small-town default.
 const START_REL = [
-  ["brannoc", "odo", -2, -2, "Odo once cheated Brannoc on an iron order; they have not forgiven it"],
-  ["brannoc", "pip", 1.5, 1, "master and apprentice"],
-  ["pip", "brannoc", 2.5, 2.5, "Pip idolizes Brannoc"],
-  ["marigold", "odo", -1, -1, "she owes him money and fears him"],
-  ["odo", "marigold", 0, -1, "a debtor who is late"],
+  ["brenna", "odette", -2, -2, "Odette once cheated Brenna on an iron order; they have not forgiven it"],
+  ["brenna", "pippa", 1.5, 1, "master and apprentice"],
+  ["pippa", "brenna", 2.5, 2.5, "Pippa idolizes Brenna"],
+  ["marigold", "odette", -1, -1, "she owes her money and fears her"],
+  ["odette", "marigold", 0, -1, "a debtor who is late"],
   ["marigold", "juniper", 2, 2, "close friends"],
   ["juniper", "marigold", 2, 2, "close friends"],
-  ["silas", "wren", -1, 0, "resents working for her"],
-  ["wren", "silas", 1, 1.5, "trusts him with the till"],
+  ["sylvie", "wren", -1, 0, "resents working for her"],
+  ["wren", "sylvie", 1, 1.5, "trusts her with the till"],
   ["wren", "marigold", 1.5, 1.5, "old friends"],
   ["hesper", "juniper", -0.5, -1, "wary of the newcomer-herbalist"],
-  ["odo", "hesper", 1, 0, "cultivates the elder's favor"],
-  ["hesper", "odo", 0.5, 0.5, "finds him useful"],
-  ["silas", "odo", 1, 0.5, "drinking companions"],
-  ["odo", "silas", 0.5, 0, "a useful pair of ears"],
+  ["odette", "hesper", 1, 0, "cultivates the elder's favor"],
+  ["hesper", "odette", 0.5, 0.5, "finds her useful"],
+  ["sylvie", "odette", 1, 0.5, "drinking companions"],
+  ["odette", "sylvie", 0.5, 0, "a useful pair of ears"],
 ];
 
 export function newTown() {
@@ -116,7 +116,7 @@ export function newTown() {
     people[v.id].knows[id] = { conf: 1, from: "self", day: 0, time: "08:00" };
   }
   // One secret has already leaked to one person.
-  people.wren.knows.r1 = { conf: 0.6, from: "odo", day: 0, time: "08:00" }; // Marigold's debt
+  people.wren.knows.r1 = { conf: 0.6, from: "odette", day: 0, time: "08:00" }; // Marigold's debt
 
   return {
     day: 1, minute: 8 * 60, // game clock, minutes since midnight

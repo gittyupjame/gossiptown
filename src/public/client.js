@@ -8,7 +8,7 @@ import { surface, placeOn, buildTown, makePerson, animate, LOOKS } from "./globe
 
 const $ = (id) => document.getElementById(id);
 const PLACE_NAMES = { square: "the village square", bakery: "Marigold's bakery", smithy: "the smithy", tavern: "the Crooked Kettle tavern", market: "the market stalls", garden: "the herb garden", hall: "the elder's hall", road: "the lane" };
-const PLAYER_SPEED = 3.6, WALK_SPEED = 2.2; // tiles per second
+const PLAYER_SPEED = 2.6, WALK_SPEED = 1.1; // tiles per second: an easy stroll
 
 // ---------- 3D scene ----------
 
@@ -29,10 +29,10 @@ const people = {};      // id -> { x, y, path, heading, moving, t, shown, model,
 const player = { x: map.START.x + 0.5, y: map.START.y + 0.5, heading: 0, moving: false, t: 0 };
 player.model = makePerson(LOOKS.player);
 scene.add(player.model.root);
-let following = null, mode = "idle", menuFor = null, lastSent = "", nightOn = false, paused = true;
+let lastSent = "", nightOn = false, paused = true;
 let zoom = 1;
 // how the camera sits behind and above the player
-const view = { dist: 14, up: 0.95, back: 0.55, lookUp: 0.5, lookAhead: 0 };
+const view = { dist: 11, up: 0.95, back: 0.55, lookUp: 0.5, lookAhead: 0 };
 const keys = new Set();
 
 // ---------- server events ----------
@@ -65,7 +65,7 @@ es.addEventListener("dusk", () => showNight([]));
 es.addEventListener("night", (e) => showNight(JSON.parse(e.data), true));
 es.addEventListener("dawn", (e) => {
   const d = JSON.parse(e.data);
-  player.x = d.pos.x; player.y = d.pos.y; following = null;
+  player.x = d.pos.x; player.y = d.pos.y;
   applyState(d.state, true);
   showMorning();
 });
@@ -90,9 +90,7 @@ function applyState(s, snap = false) {
     $("place").textContent = placeName;
     if (was && s.place !== "road") toast(`You enter ${placeName}.`);
   }
-  if (was?.talkingTo && !s.talkingTo && mode === "say") setMode("idle");
-  if (s.talkingTo && mode !== "say") setMode("say");
-  updateWho();
+  updateTalk();
   const ids = new Set();
   for (const p of s.people) {
     ids.add(p.id);
@@ -121,6 +119,7 @@ function setPaused(p) {
   paused = !!p;
   $("playbtn").textContent = paused ? "▶ Play" : "❚❚ Pause";
   $("pausebox").classList.toggle("show", paused);
+  $("playbtn").style.background = paused ? "" : "#9ab8e0";
   if (paused) keys.clear();
 }
 $("playbtn").onclick = () => togglePause();
@@ -128,6 +127,7 @@ function togglePause() {
   setPaused(!paused);
   post("/pause", { paused });
   $("playbtn").blur();
+  if (paused && document.activeElement === $("in")) $("in").blur();
 }
 
 // ---------- the side panel ----------
@@ -143,7 +143,7 @@ function addLine(text) {
     else if (/^\[.+(every word|part of it)\]$/.test(line)) d.className = "hearhead";
     else if (/^\* /.test(line) || /walks straight up to you/.test(line)) d.className = "event";
     else if (/^\s*- /.test(line) || /bells ring|Day \d+ begins/.test(line)) d.className = "night";
-    else if (/^[A-Z][a-z]+( [A-Z][a-z]+)?: /.test(line)) d.className = state?.talkingTo && line.startsWith(firstOf(state.talkingTo) + ":") ? "say" : "hear";
+    else if (/^[A-Z][a-z]+( [A-Z][a-z]+)?: /.test(line)) d.className = talking() && line.startsWith(firstOf(talking()) + ":") ? "say" : "hear";
     else d.className = "info";
     d.textContent = line;
     log.appendChild(d);
@@ -161,21 +161,20 @@ function toast(text) {
   toastTimer = setTimeout(() => $("toast").classList.remove("show"), 2200);
 }
 
-function setMode(m) {
-  mode = m;
-  const input = $("in");
-  input.placeholder = m === "say" ? `Say something to ${firstOf(state?.talkingTo)}... (Esc to say goodbye)`
-    : m === "do" ? "Describe what you do, then press Enter... (Esc to cancel)"
-    : "Press Enter to type";
-  if (m === "say" || m === "do") input.focus();
-  updateWho();
-}
-function updateWho() {
-  const who = $("who");
-  if (mode === "say" && state?.talkingTo) who.innerHTML = `Talking to <b>${firstOf(state.talkingTo)}</b>. Walk away or press <kbd>Esc</kbd> to stop.`;
-  else if (mode === "do") who.innerHTML = `Doing something at <b>${PLACE_NAMES[state?.place] || "the lane"}</b>. Everyone here will see it.`;
-  else if (following) who.innerHTML = `Following <b>${firstOf(following)}</b>. Press an arrow key to stop.`;
-  else who.innerHTML = `Walk up to someone and press <kbd>E</kbd>.`;
+// ---------- talking ----------
+// Enter next to someone starts a conversation. While talking, Enter sends what you typed;
+// Enter on an empty line says goodbye.
+
+const talking = () => state?.talkingTo || null;
+
+function updateTalk() {
+  const who = talking();
+  $("talk").classList.toggle("show", !!who);
+  $("hint").style.display = who ? "none" : "block";
+  if (who) {
+    $("who").innerHTML = `Talking to <b>${firstOf(who)}</b>. Press Enter on an empty line to say goodbye.`;
+    if (document.activeElement !== $("in")) $("in").focus();
+  } else if (document.activeElement === $("in")) $("in").blur();
 }
 
 const post = (url, data) => fetch(url, { method: "POST", body: JSON.stringify(data || {}) });
@@ -184,61 +183,36 @@ const act = (data) => {
   return post("/act", data);
 };
 
-$("f").onsubmit = (e) => {
-  e.preventDefault();
-  const text = $("in").value.trim();
-  $("in").value = "";
-  if (!text) { if (mode !== "say") $("in").blur(); return; }
-  if (paused) { toast("The game is paused. Press Play first."); return; }
-  if (mode === "say" && state?.talkingTo) {
-    act({ cmd: text, near: state.talkingTo, echo: text, speech: true });
-    bubble("player", text);
-  } else if (mode === "do") {
-    act({ cmd: `do ${text}`, echo: `(you ${text})` });
-    setMode("idle"); $("in").blur();
-  } else if (/^(journal|map|bag|help|stats|do|note|wait)\b/i.test(text)) {
-    act({ cmd: text, echo: text });
-  } else {
-    toast("To talk, walk up to someone and press E.");
-  }
-};
+function startTalk(id) {
+  const p = people[id];
+  act({ cmd: `talk ${firstOf(id)}`, near: id, at: { x: Math.floor(p.x), y: Math.floor(p.y) } });
+  p.path = []; // they stop where they are
+  state.talkingTo = id;
+  updateTalk();
+}
+function endTalk() {
+  if (talking()) act({ cmd: "bye" });
+  state.talkingTo = null;
+  updateTalk();
+}
 
 $("in").addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
+  e.stopPropagation(); // keys typed here are words, not game controls
+  if (e.key === "Enter") {
     e.preventDefault();
-    if (mode === "say") act({ cmd: "bye" });
-    setMode("idle");
-    $("in").blur();
-  }
+    const text = $("in").value.trim();
+    $("in").value = "";
+    if (!text) return endTalk();
+    if (paused) { toast("The game is paused. Press Play first."); return; }
+    if (talking()) { act({ cmd: text, near: talking(), echo: text, speech: true }); bubble("player", text); }
+  } else if (e.key === "Escape") { e.preventDefault(); endTalk(); }
 });
 
-$("b-do").onclick = () => { closeMenus(); setMode("do"); };
-$("b-journal").onclick = () => act({ cmd: "journal", echo: "journal" });
-$("b-map").onclick = () => act({ cmd: "map", echo: "who likes who" });
-$("b-bag").onclick = () => act({ cmd: "bag", echo: "bag" });
-$("b-new").onclick = () => { if (confirm("Start a fresh town? Your current game will be replaced.")) post("/new"); };
 $("end-new").onclick = () => post("/new");
 $("night-ok").onclick = () => { $("nightbox").classList.remove("show"); nightOn = false; post("/morning"); };
 
-$("b-note").onclick = () => {
-  closeMenus();
-  $("note-to").innerHTML = state.people.map((p) => `<option value="${p.first}">${p.name} (${p.job})</option>`).join("");
-  $("notebox").classList.add("show");
-  $("note-text").focus();
-};
-$("note-send").onclick = () => {
-  const text = $("note-text").value.trim();
-  if (!text) return;
-  act({ cmd: `note ${$("note-to").value} ${text}`, echo: `(a note for ${$("note-to").value}) ${text}` });
-  $("note-text").value = "";
-  closeMenus();
-};
-$("note-close").onclick = closeMenus;
-
-// ---------- the person menu ----------
-
 function nearest() {
-  let best = null, bd = 1.7;
+  let best = null, bd = 1.8;
   for (const [id, p] of Object.entries(people)) {
     if (!p.shown || p.info?.home) continue;
     const d = map.dist(p.x, p.y, player.x, player.y);
@@ -247,86 +221,26 @@ function nearest() {
   return best;
 }
 
-function openPersonMenu(id) {
-  closeMenus();
-  menuFor = id;
-  const p = people[id].info;
-  $("pm-name").textContent = p.name;
-  $("pm-job").textContent = p.job;
-  $("pm-follow").innerHTML = following === id ? "<kbd>F</kbd> Stop following" : "<kbd>F</kbd> Follow";
-  $("personmenu").classList.add("show");
-}
-function closeMenus() {
-  for (const m of document.querySelectorAll(".menu")) m.classList.remove("show");
-  menuFor = null;
-}
-const menuOpen = () => !!document.querySelector(".menu.show");
-
-function startTalk(id) {
-  closeMenus();
-  following = null;
-  act({ cmd: `talk ${firstOf(id)}`, near: id });
-  state.talkingTo = id;
-  setMode("say");
-}
-function openGifts(id) {
-  closeMenus();
-  menuFor = id;
-  $("gifts").innerHTML = "";
-  for (const item of state.bag) {
-    const b = document.createElement("button");
-    b.textContent = item;
-    b.onclick = () => { act({ cmd: `give ${firstOf(id)} ${item}`, near: id }); closeMenus(); };
-    $("gifts").appendChild(b);
-  }
-  if (!state.bag.length) $("gifts").textContent = "Your bag is empty.";
-  $("giftmenu").classList.add("show");
-}
-function toggleFollow(id) {
-  closeMenus();
-  following = following === id ? null : id;
-  if (following) toast(`You keep a casual distance behind ${firstOf(id)}.`);
-  updateWho();
-}
-$("pm-talk").onclick = () => startTalk(menuFor);
-$("pm-give").onclick = () => openGifts(menuFor);
-$("pm-follow").onclick = () => toggleFollow(menuFor);
-$("pm-close").onclick = closeMenus;
-$("gm-close").onclick = closeMenus;
-
-// ---------- keyboard and mouse ----------
+// ---------- keyboard ----------
 
 const MOVE_KEYS = { arrowup: [0, -1], w: [0, -1], arrowdown: [0, 1], s: [0, 1], arrowleft: [-1, 0], a: [-1, 0], arrowright: [1, 0], d: [1, 0] };
 
 window.addEventListener("keydown", (e) => {
-  const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
-  if (typing) { if (e.key === "Escape") { closeMenus(); document.activeElement.blur(); } return; }
+  if (document.activeElement === $("in")) return;
   const k = e.key.toLowerCase();
   if (k === "p") { togglePause(); return; }
-  if (paused) return;
-  if (MOVE_KEYS[k]) {
+  if (paused || nightOn) return;
+  if (MOVE_KEYS[k]) { e.preventDefault(); keys.add(k); return; }
+  if (k === "enter") {
     e.preventDefault();
-    keys.add(k);
-    if (menuOpen()) closeMenus();
-    if (following) { following = null; updateWho(); }
-    return;
-  }
-  if (k === "escape") { closeMenus(); if (mode === "say") { act({ cmd: "bye" }); setMode("idle"); } return; }
-  if ($("personmenu").classList.contains("show")) {
-    if (k === "t") { e.preventDefault(); return startTalk(menuFor); }
-    if (k === "g") return openGifts(menuFor);
-    if (k === "f") return toggleFollow(menuFor);
-  }
-  if (k === "e" && !nightOn) {
+    if (talking()) { $("in").focus(); return; }
     const id = nearest();
-    if (id) openPersonMenu(id); else toast("Nobody is close enough. Walk right up to someone.");
-    return;
+    if (id) startTalk(id); else toast("Walk right up to someone, then press Enter.");
   }
-  if (k === "enter") { e.preventDefault(); $("in").focus(); }
 });
 window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 window.addEventListener("blur", () => keys.clear());
-holder.addEventListener("wheel", (e) => { e.preventDefault(); zoom = Math.max(0.55, Math.min(2.2, zoom * (e.deltaY > 0 ? 1.1 : 0.9))); }, { passive: false });
+holder.addEventListener("wheel", (e) => { e.preventDefault(); zoom = Math.max(0.6, Math.min(1.8, zoom * (e.deltaY > 0 ? 1.1 : 0.9))); }, { passive: false });
 
 // ---------- movement ----------
 
@@ -361,7 +275,7 @@ function slide(nx, ny, axis, dt) {
   }
 }
 
-let followPath = [], followRecalc = 0, sendTimer = 0;
+let sendTimer = 0;
 
 function update(dt) {
   // the player
@@ -377,18 +291,6 @@ function update(dt) {
     else if (vx === 0) slide(player.x, ny, "x", dt);
     player.heading = Math.atan2(vx, vy);
     player.moving = true;
-  } else if (following && people[following]?.shown) {
-    const t = people[following];
-    if (map.dist(t.x, t.y, player.x, player.y) > 1.6) {
-      followRecalc -= dt;
-      if (followRecalc <= 0 || !followPath.length) { followPath = map.findPath(Math.floor(player.x), Math.floor(player.y), Math.floor(t.x), Math.floor(t.y)) || []; followRecalc = 0.6; }
-      const next = followPath[0];
-      if (next && stepToward(player, next.x + 0.5, next.y + 0.5, PLAYER_SPEED * 0.8, dt)) followPath.shift();
-      player.moving = true;
-    }
-  } else if (following && people[following] && !people[following].shown) {
-    toast(`${firstOf(following)} has gone indoors for the night.`);
-    following = null; updateWho();
   }
   if (player.moving) player.t += dt;
 
@@ -426,7 +328,7 @@ function update(dt) {
 function bubble(id, text, ms) {
   const o = id === "player" ? player : people[id];
   if (!o) return;
-  if (!o.bubbleEl) { o.bubbleEl = document.createElement("div"); o.bubbleEl.className = "bubble"; $("labels").appendChild(o.bubbleEl); }
+  if (!o.bubbleEl) { o.bubbleEl = document.createElement("div"); o.bubbleEl.className = id === "player" ? "bubble you" : "bubble"; $("labels").appendChild(o.bubbleEl); }
   o.bubbleEl.textContent = text;
   o.bubbleUntil = performance.now() + (ms || Math.min(9000, 2500 + text.length * 55));
 }
@@ -490,7 +392,7 @@ function draw(now) {
   sun.color.set(dusk > 0.3 ? "#ffc89a" : "#fff0d8");
   holder.classList.toggle("night", dusk > 0.6);
 
-  const near = !menuOpen() && mode !== "say" ? nearest() : null;
+  const near = talking() ? null : nearest();
   animate(player.model, player.moving && !paused, player.t);
   for (const [id, p] of Object.entries(people)) {
     p.model.root.visible = p.shown;
@@ -499,7 +401,7 @@ function draw(now) {
     animate(p.model, p.moving && !paused, p.moving ? p.t : paused ? 0 : now / 1000 + p.t);
     const pt = map.dist(p.x, p.y, player.x, player.y) < 7 && screenAt(p.x, p.y, 1.25);
     p.tag.style.display = pt ? "block" : "none";
-    if (pt) { p.tag.style.left = pt[0] + "px"; p.tag.style.top = pt[1] + "px"; p.tag.classList.toggle("near", id === near); p.tag.textContent = p.info.first + (id === near ? "  [E]" : ""); }
+    if (pt) { p.tag.style.left = pt[0] + "px"; p.tag.style.top = pt[1] + "px"; p.tag.classList.toggle("near", id === near); p.tag.textContent = p.info.first; }
   }
   for (const o of [player, ...Object.values(people)]) {
     if (!o.bubbleEl) continue;
@@ -519,7 +421,6 @@ function showNight(lines, done) {
   if (lines === null || lines === undefined) { $("nightbox").classList.remove("show"); nightOn = false; return; }
   nightOn = true;
   keys.clear();
-  closeMenus();
   $("nightbox").classList.add("show");
   $("night-title").textContent = "The bells ring eight. The day is over.";
   $("night-text").textContent = done ? "Overnight, the town made up its mind:" : "The town goes to bed and makes up its mind...";

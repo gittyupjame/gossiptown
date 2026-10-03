@@ -180,7 +180,7 @@ export async function move(s, v, ui) {
   }, {
     go: {
       type: "choice",
-      instructions: `It is ${clock(s.minute)}. Decide where ${first(v)} goes for the next quarter hour, the way this person really would: their job and the time of day, how they feel, who they want to see or avoid, and any plan they have made. People follow through on plans, most of all ones they told someone about.`,
+      instructions: `It is ${clock(s.minute)}. Decide where ${first(v)} goes for the next quarter hour, the way this person really would: their job and the time of day, how they feel, who they want to see or avoid, and any plan they have made. People follow through on plans, most of all ones they told someone about. This is a slow, calm village: people usually stay where they are for a good while, and only go somewhere else when they have a reason.`,
       criteria,
     },
   }, `move:${v.id}`);

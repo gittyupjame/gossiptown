@@ -4,120 +4,90 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Thistlewick</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#16140f; --panel:#221f19; --line:#3a352b; --fg:#ece4cf; --dim:#a39a84; --you:#f0bf5e; --say:#9fd49a; --hear:#9ab8e0; --event:#e09a7a; }
+  :root { --ink: #5a4636; --soft: #8a7462; --card: rgba(255, 250, 242, 0.94); --edge: #f0d9c4; --pink: #f49ab0; --you: #e07a5f; --mint: #7cc5a8; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.45 ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
-  body { display: flex; }
-  #game { position: relative; flex: 1; min-width: 0; }
-  #world { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 30%, #bfe6ff 0%, #8ccdf4 45%, #6aa8e8 100%); transition: background 2s; }
-  #world.night { background: radial-gradient(ellipse at 50% 30%, #3a4a8a 0%, #232a5a 50%, #141838 100%); }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Fredoka", ui-rounded, system-ui, sans-serif; color: var(--ink); }
+  body { background: #bfe3f7; }
+  #world { position: absolute; inset: 0; background: linear-gradient(#a8dcf5 0%, #d4eefa 55%, #fde8ef 100%); transition: background 2s; }
+  #world.night { background: linear-gradient(#2c3466 0%, #4a4a86 60%, #7a6a9a 100%); }
   #world canvas { display: block; }
   #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-  .tag { position: absolute; transform: translate(-50%, -100%); background: rgba(30,26,20,0.72); color: #fff8e8; font: bold 12px ui-monospace, Menlo, monospace; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
-  .tag.near { background: #f0bf5e; color: #2a2010; }
-  .place { position: absolute; transform: translate(-50%, -50%); color: #fff; font: bold 13px ui-monospace, Menlo, monospace; text-shadow: 0 1px 3px rgba(0,0,0,0.7); white-space: nowrap; opacity: 0.9; }
-  .bubble { position: absolute; transform: translate(-50%, -100%); max-width: 230px; background: #fffaf0; color: #2a2218; border: 2px solid #2a2218; border-radius: 10px; padding: 5px 9px; font: 13px/1.35 ui-monospace, Menlo, monospace; }
-  .bubble::after { content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -6px; border: 6px solid transparent; border-top-color: #2a2218; border-bottom: 0; }
-  #playbtn { position: absolute; right: 12px; top: 10px; font-size: 15px; padding: 6px 14px; background: #f0bf5e; color: #2a2010; border: 0; font-weight: bold; }
-  #pausebox { position: absolute; inset: 0; background: rgba(10,12,24,0.35); display: none; align-items: flex-start; justify-content: center; padding-top: 60px; pointer-events: none; }
-  #pausebox.show { display: flex; }
-  #pausebox div { background: rgba(20,18,14,0.85); padding: 14px 22px; border-radius: 10px; border: 1px solid var(--line); text-align: center; }
-  #hud { position: absolute; left: 12px; top: 10px; background: rgba(20,18,14,0.82); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); pointer-events: none; }
-  #hud b { color: var(--you); }
-  #hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: rgba(20,18,14,0.8); padding: 5px 12px; border-radius: 6px; color: var(--dim); font-size: 13px; pointer-events: none; white-space: nowrap; }
-  #toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: rgba(20,18,14,0.9); border: 1px solid var(--line); padding: 6px 14px; border-radius: 6px; opacity: 0; transition: opacity .4s; pointer-events: none; }
+
+  .tag { position: absolute; transform: translate(-50%, -100%); background: rgba(255,255,255,0.85); color: var(--ink); font-size: 13px; font-weight: 600; padding: 1px 9px; border-radius: 99px; white-space: nowrap; box-shadow: 0 2px 4px rgba(90,70,54,0.15); }
+  .tag.near { background: var(--pink); color: #fff; }
+  .tag.near::after { content: " · Enter"; font-weight: 500; }
+  .place { position: absolute; transform: translate(-50%, -50%); color: #fff; font-size: 14px; font-weight: 600; text-shadow: 0 1px 3px rgba(90,70,54,0.6); white-space: nowrap; }
+  .bubble { position: absolute; transform: translate(-50%, -100%); max-width: 240px; background: #fff; color: var(--ink); border-radius: 16px; padding: 7px 12px; font-size: 14px; line-height: 1.35; box-shadow: 0 3px 10px rgba(90,70,54,0.18); }
+  .bubble::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-top-color: #fff; border-bottom: 0; }
+  .bubble.you { background: #ffe6dc; }
+  .bubble.you::after { border-top-color: #ffe6dc; }
+
+  #clockpill { position: absolute; left: 16px; top: 14px; background: var(--card); border-radius: 99px; padding: 6px 16px; font-weight: 500; box-shadow: 0 2px 8px rgba(90,70,54,0.15); }
+  #clockpill b { color: var(--you); }
+  #playbtn { position: absolute; right: 16px; top: 12px; font: inherit; font-weight: 600; font-size: 16px; padding: 7px 18px; background: var(--pink); color: #fff; border: 0; border-radius: 99px; cursor: pointer; box-shadow: 0 2px 8px rgba(90,70,54,0.2); z-index: 5; }
+  #toast { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); background: var(--card); padding: 6px 16px; border-radius: 99px; opacity: 0; transition: opacity .4s; pointer-events: none; box-shadow: 0 2px 8px rgba(90,70,54,0.15); }
   #toast.show { opacity: 1; }
-  .menu { position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 260px; display: none; }
-  .menu.show { display: block; }
-  .menu h3 { margin: 0 0 8px; font-size: 15px; color: var(--you); }
-  .menu .sub { color: var(--dim); font-size: 13px; margin: -6px 0 8px; }
-  .menu button { display: block; width: 100%; text-align: left; margin: 4px 0; }
-  .overlay { position: absolute; inset: 0; background: rgba(8,10,24,0.86); display: none; align-items: center; justify-content: center; text-align: center; padding: 20px; }
-  .overlay.show { display: flex; }
-  .overlay .box { max-width: 520px; }
-  .overlay h2 { color: var(--you); margin: 0 0 12px; }
-  .overlay ul { text-align: left; padding-left: 20px; }
-  #side { width: 400px; max-width: 45vw; background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; }
-  #tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line); }
-  #log { flex: 1; overflow-y: auto; padding: 10px 12px; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; }
-  #log div { margin-bottom: 4px; }
+
+  #chat { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(620px, calc(100% - 32px)); background: var(--card); border-radius: 20px; box-shadow: 0 4px 16px rgba(90,70,54,0.2); padding: 10px 14px; }
+  #log { max-height: 22vh; overflow-y: auto; font-size: 14px; line-height: 1.4; }
+  #log div { margin: 2px 0; }
   #log .you { color: var(--you); }
-  #log .say { color: var(--say); }
-  #log .hear { color: var(--hear); }
-  #log .hearhead { color: var(--dim); font-style: italic; margin-top: 8px; }
-  #log .event { color: var(--event); }
-  #log .info { color: var(--fg); }
-  #log .night { color: var(--you); margin-top: 10px; }
-  #talkbar { padding: 10px; border-top: 1px solid var(--line); }
-  #who { font-size: 13px; color: var(--dim); margin-bottom: 6px; min-height: 18px; }
-  #who b { color: var(--say); }
-  form { display: flex; gap: 6px; }
-  input, select, textarea { flex: 1; font: inherit; padding: 9px; background: var(--bg); color: var(--fg); border: 1px solid #4a4538; border-radius: 6px; }
-  button { font: inherit; font-size: 13px; padding: 6px 10px; background: #3a3528; color: var(--fg); border: 1px solid #5a5440; border-radius: 6px; cursor: pointer; }
-  button:hover { background: #4a4433; }
-  kbd { background: #3a3528; border: 1px solid #5a5440; border-radius: 3px; padding: 0 4px; font-size: 12px; }
-  #notebox textarea { width: 100%; min-height: 70px; margin: 6px 0; }
-  #notebox select { width: 100%; }
-  @media (max-width: 800px) { body { flex-direction: column; } #side { width: 100%; max-width: none; height: 42vh; border-left: 0; border-top: 1px solid var(--line); } }
+  #log .say { color: #3a8a6a; }
+  #log .hear { color: #6a7aa8; }
+  #log .hearhead { color: var(--soft); font-style: italic; margin-top: 6px; font-size: 13px; }
+  #log .event { color: #c0607a; }
+  #log .night { color: #8a6ab0; }
+  #log .info { color: var(--soft); }
+  #talk { display: none; margin-top: 8px; }
+  #talk.show { display: block; }
+  #who { font-size: 13px; color: var(--soft); margin-bottom: 4px; }
+  #who b { color: #3a8a6a; }
+  #in { width: 100%; font: inherit; font-size: 15px; padding: 9px 14px; background: #fff; color: var(--ink); border: 2px solid var(--edge); border-radius: 99px; outline: none; }
+  #in:focus { border-color: var(--pink); }
+  #hint { text-align: center; font-size: 13px; color: var(--soft); margin-top: 6px; }
+  kbd { font: inherit; font-size: 12px; background: #fff; border: 1px solid var(--edge); border-radius: 6px; padding: 0 5px; }
+
+  .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(60,50,90,0.35); }
+  .overlay.show { display: flex; }
+  .overlay .box { background: var(--card); border-radius: 22px; padding: 22px 28px; max-width: 480px; text-align: center; box-shadow: 0 6px 24px rgba(40,30,60,0.3); }
+  .overlay h2 { margin: 0 0 10px; color: var(--you); font-weight: 600; }
+  .overlay ul { text-align: left; padding-left: 20px; }
+  .overlay button { font: inherit; font-weight: 600; font-size: 16px; padding: 8px 20px; background: var(--pink); color: #fff; border: 0; border-radius: 99px; cursor: pointer; }
+  #pausebox { background: rgba(60,50,90,0.25); align-items: flex-start; padding-top: 70px; pointer-events: none; }
 </style>
 </head>
 <body>
-<div id="game">
-  <div id="world"></div>
-  <div id="labels"></div>
-  <div id="pausebox" class="show"><div><b style="color:var(--you)">Paused.</b> The whole town is stopped.<br>Press <kbd>P</kbd> or Play to carry on.</div></div>
-  <button id="playbtn">▶ Play</button>
-  <div id="hud">Day <b id="day">1</b> · <span id="clock">08:00</span> · <span id="place">the village square</span></div>
-  <div id="toast"></div>
-  <div id="hint"><kbd>WASD</kbd>/<kbd>arrows</kbd> walk · <kbd>E</kbd> talk to someone nearby · <kbd>Enter</kbd> type · <kbd>P</kbd> pause · scroll to zoom</div>
+<div id="world"></div>
+<div id="labels"></div>
+<div id="clockpill">Day <b id="day">1</b> · <span id="clock">08:00</span> · <span id="place">the village square</span></div>
+<button id="playbtn">▶ Play</button>
+<div id="toast"></div>
 
-  <div class="menu" id="personmenu">
-    <h3 id="pm-name"></h3>
-    <div class="sub" id="pm-job"></div>
-    <button id="pm-talk"><kbd>T</kbd> Talk</button>
-    <button id="pm-give"><kbd>G</kbd> Give a gift</button>
-    <button id="pm-follow"><kbd>F</kbd> Follow</button>
-    <button id="pm-close"><kbd>Esc</kbd> Never mind</button>
-  </div>
-  <div class="menu" id="giftmenu"><h3>Give what?</h3><div id="gifts"></div><button id="gm-close"><kbd>Esc</kbd> Never mind</button></div>
-  <div class="menu" id="notebox">
-    <h3>Leave an unsigned note</h3>
-    <div class="sub">They will find it soon. Nobody sees who left it.</div>
-    <select id="note-to"></select>
-    <textarea id="note-text" placeholder="What does the note say?"></textarea>
-    <button id="note-send">Leave the note</button>
-    <button id="note-close"><kbd>Esc</kbd> Never mind</button>
-  </div>
-
-  <div class="overlay" id="nightbox"><div class="box">
-    <h2 id="night-title">The bells ring eight.</h2>
-    <div id="night-text">The town goes to bed and makes up its mind...</div>
-    <ul id="night-lines"></ul>
-    <button id="night-ok" style="display:none">Start the next day</button>
-  </div></div>
-  <div class="overlay" id="endbox"><div class="box">
-    <h2>You have been run out of Thistlewick.</h2>
-    <p>Elder Hesper ordered you to leave. The game is over.</p>
-    <button id="end-new">Start a new town</button>
-  </div></div>
-</div>
-
-<div id="side">
-  <div id="tools">
-    <button id="b-do">Do something</button>
-    <button id="b-note">Leave a note</button>
-    <button id="b-journal">Journal</button>
-    <button id="b-map">Who likes who</button>
-    <button id="b-bag">Bag</button>
-    <button id="b-new">New game</button>
-  </div>
+<div id="chat">
   <div id="log"></div>
-  <div id="talkbar">
-    <div id="who">Walk up to someone and press <kbd>E</kbd>.</div>
-    <form id="f"><input id="in" autocomplete="off" placeholder="Press Enter to type"><button>Send</button></form>
+  <div id="talk">
+    <div id="who"></div>
+    <input id="in" autocomplete="off" placeholder="Type what you say, then press Enter">
   </div>
+  <div id="hint"><kbd>WASD</kbd> or <kbd>arrows</kbd> to walk · <kbd>Enter</kbd> next to someone to talk · <kbd>P</kbd> to pause</div>
 </div>
+
+<div class="overlay show" id="pausebox"><div class="box"><h2>Paused</h2>The whole town is stopped.<br>Press <kbd>P</kbd> or Play to carry on.</div></div>
+<div class="overlay" id="nightbox"><div class="box">
+  <h2 id="night-title">The bells ring eight.</h2>
+  <div id="night-text">The town goes to bed and makes up its mind...</div>
+  <ul id="night-lines"></ul>
+  <button id="night-ok" style="display:none">Start the next day</button>
+</div></div>
+<div class="overlay" id="endbox"><div class="box">
+  <h2>You have been sent away from Thistlewick.</h2>
+  <p>Elder Hesper ordered you to leave. The game is over.</p>
+  <button id="end-new">Start a new town</button>
+</div></div>
+
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }</script>
 <script type="module" src="/client.js"></script>
 </body>

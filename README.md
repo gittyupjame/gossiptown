@@ -15,9 +15,14 @@ Needs Node 20+ and the `claude` CLI signed in (it writes the villagers' lines).
     node src/main.js --new   # fresh town
 
 Or play the 3D version in the browser: `npm run web`, then open
-http://localhost:4747. The town sits on a small round planet. Walk with the
-arrow keys or WASD, scroll to zoom. Walk up to someone and press E to talk,
-give a gift, or follow them; you type what you say in the box on the right.
+http://localhost:4747. The town sits on a small round planet. There are only
+three controls:
+
+- Walk: arrow keys or WASD.
+- Talk: walk up to someone and press Enter. She stops where she is. Type what
+  you say and press Enter. Press Enter on an empty line to say goodbye.
+- Pause: P, or the button at the top right.
+
 Stand close to people talking and you hear every word; a few steps away you
 only catch part of it.
 
@@ -45,15 +50,15 @@ Settings (env or `.env`):
 
 ## Commands
 
-    look, go <place>, talk <name> (then just type; "bye" to stop), listen,
-    follow <name>, stop, give <name> <thing>, bag, note <name> <text>,
-    do <anything>, map, journal, wait, stats, quit
+    (terminal version only) look, go <place>, talk <name> (then just type;
+    "bye" to stop), listen, follow <name>, stop, give <name> <thing>, bag,
+    note <name> <text>, do <anything>, map, journal, wait, stats, quit
 
 ## Design decisions (from Jamin's answers, Oct 3 2026)
 
 | Topic | Decision |
 | --- | --- |
-| Town | 12 villagers in the full game (8 in this prototype), cozy fantasy, a top-down 2D pixel map later |
+| Town | 12 villagers in the full game (8 in this prototype), all women, cozy fantasy, a small 3D planet |
 | Starting state | Villagers begin with secrets, feuds and friendships to uncover |
 | Day | About 10 real minutes; the clock keeps running while you talk |
 | Goal | Pure sandbox, over a season of about 30 days with a recap |

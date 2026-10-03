@@ -19,38 +19,38 @@ function speckle(g, base, dots, r, n) {
 
 const PAINT = {
   g(g, r) {
-    speckle(g, "#7cc35a", ["#6fb54f", "#8bd068", "#68a94a"], r, 24);
-    if (r() < 0.3) { const x = 2 + Math.floor(r() * 11), y = 3 + Math.floor(r() * 10); g.fillStyle = "#5f9e44"; g.fillRect(x, y, 1, 2); g.fillRect(x + 2, y, 1, 2); g.fillRect(x + 1, y - 1, 1, 3); }
+    speckle(g, "#a6dc84", ["#9ad478", "#b2e490", "#94cc74"], r, 18);
+    if (r() < 0.3) { const x = 2 + Math.floor(r() * 11), y = 3 + Math.floor(r() * 10); g.fillStyle = "#8cc86c"; g.fillRect(x, y, 1, 2); g.fillRect(x + 2, y, 1, 2); g.fillRect(x + 1, y - 1, 1, 3); }
   },
-  p(g, r) { speckle(g, "#e2c08a", ["#d6b27a", "#ecce9a", "#cfa870"], r, 20); },
-  n(g, r) { speckle(g, "#f2dfa4", ["#e8d394", "#f8e8b8", "#e0c888"], r, 18); },
+  p(g, r) { speckle(g, "#f6e2bc", ["#efd8ae", "#fbeacc", "#ead2a4"], r, 14); },
+  n(g, r) { speckle(g, "#fbecc4", ["#f6e4b4", "#fff4d8", "#f2dcaa"], r, 14); },
   o(g, r) {
-    g.fillStyle = "#58b4e0"; g.fillRect(0, 0, T, T);
-    g.fillStyle = "#7ccaf0";
+    g.fillStyle = "#8fd2f0"; g.fillRect(0, 0, T, T);
+    g.fillStyle = "#b4e2f6";
     for (let i = 0; i < 3; i++) { const x = Math.floor(r() * 12), y = Math.floor(r() * 14); g.fillRect(x, y, 4, 1); }
   },
   c(g, r) {
-    g.fillStyle = "#b9b2a8"; g.fillRect(0, 0, T, T);
+    g.fillStyle = "#e0d6ce"; g.fillRect(0, 0, T, T);
     for (let row = 0; row < 4; row++) for (let col = -1; col < 4; col++) {
       const x = col * 4 + (row % 2 ? 2 : 0), y = row * 4;
-      g.fillStyle = ["#d2ccc2", "#c8c1b6", "#dcd6cc"][Math.floor(r() * 3)];
+      g.fillStyle = ["#f2e8e0", "#ece0d8", "#f6eee8"][Math.floor(r() * 3)];
       g.fillRect(x + 1, y + 1, 3, 3);
     }
   },
   f(g) {
-    g.fillStyle = "#c98f55"; g.fillRect(0, 0, T, T);
-    g.fillStyle = "#b07a44";
+    g.fillStyle = "#e8b88a"; g.fillRect(0, 0, T, T);
+    g.fillStyle = "#d8a678";
     for (let y = 3; y < T; y += 4) g.fillRect(0, y, T, 1);
     g.fillRect(5, 0, 1, 3); g.fillRect(12, 4, 1, 3); g.fillRect(3, 8, 1, 3); g.fillRect(10, 12, 1, 3);
   },
   s(g) {
-    g.fillStyle = "#aaa49a"; g.fillRect(0, 0, T, T);
-    g.fillStyle = "#968f86"; g.fillRect(0, 7, T, 1); g.fillRect(7, 0, 1, 7); g.fillRect(15, 8, 1, 8);
-    g.fillStyle = "#b8b2a8"; g.fillRect(1, 1, 5, 1); g.fillRect(9, 9, 5, 1);
+    g.fillStyle = "#d8d2dc"; g.fillRect(0, 0, T, T);
+    g.fillStyle = "#c6bece"; g.fillRect(0, 7, T, 1); g.fillRect(7, 0, 1, 7); g.fillRect(15, 8, 1, 8);
+    g.fillStyle = "#e6e0ea"; g.fillRect(1, 1, 5, 1); g.fillRect(9, 9, 5, 1);
   },
   d(g) { PAINT.f(g); },
   h(g, r) {
-    g.fillStyle = "#8a5e3a"; g.fillRect(0, 0, T, T);
+    g.fillStyle = "#c08a64"; g.fillRect(0, 0, T, T);
     for (let x = 1; x < T; x += 5) {
       g.fillStyle = "#4e8e3a"; g.fillRect(x + 1, 6, 1, 6);
       g.fillStyle = ["#6cc24a", "#8fd060", "#b48ae0"][Math.floor(r() * 3)]; g.fillRect(x, 3, 3, 4);
@@ -77,5 +77,9 @@ export function paintGround(map) {
     (PAINT[map.ground[y][x]] || PAINT.g)(tg, rng(x * 131 + y * 7919 + 1));
     g.drawImage(tile, x * T, y * T);
   }
-  return c;
+  // soften the pixel edges so the ground looks painted, not blocky
+  const soft = canvas(c.width, c.height), sg = soft.getContext("2d");
+  sg.filter = "blur(1.2px)";
+  sg.drawImage(c, 0, 0);
+  return soft;
 }

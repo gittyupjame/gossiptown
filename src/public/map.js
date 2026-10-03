@@ -76,7 +76,7 @@ obj("bench", 20, 16, 2, 1);
 // market
 fill(25, 15, 33, 21, "p");
 obj("stall", 26, 17, 3, 1, { color: "#e0705a" });
-obj("stall", 30, 17, 3, 1, { color: "#9a6fd0" }); // Odo's
+obj("stall", 30, 17, 3, 1, { color: "#9a6fd0" }); // Odette's
 obj("stall", 26, 20, 3, 1, { color: "#5a9ae0" });
 obj("stall", 30, 20, 3, 1, { color: "#e0b85a" });
 // herb garden, fenced, gate facing the road
@@ -87,8 +87,8 @@ for (const y of [17, 19]) fill(38, y, 42, y, "h", true);
 
 // ---- homes: four north of the road, four south, each with its door facing the road ----
 export const HOUSES = {};
-const owners = ["brannoc", "pip", "marigold", "odo", "wren", "silas", "hesper", "juniper"];
-const roofs = ["#c8594a", "#5a7ec0", "#e08a4a", "#7a5ab0", "#c0904a", "#5aa06a", "#4a6aa0", "#b0a04a"];
+const owners = ["brenna", "pippa", "marigold", "odette", "wren", "sylvie", "hesper", "juniper"];
+const roofs = ["#f48a8a", "#8ab4f0", "#f6b07a", "#b89af0", "#f0c870", "#8ad0a0", "#9aa8e8", "#e8a0c8"];
 [[43, 10], [47, 10], [51, 10], [54, 10], [46, 16], [50, 16], [54, 16], [2, 16]].forEach(([x, y], i) => {
   obj("house", x, y, 3, 2, { color: roofs[i], owner: owners[i], facing: y < 14 ? "south" : "north" });
   const fy = y < 14 ? y + 2 : y - 1; // the tile in front of the door
