@@ -3,3 +3,4 @@ save.json
 log.txt
 node_modules
 web.log
+dist

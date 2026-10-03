@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gossiptown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Pacifico&display=swap" rel="stylesheet">
+<style>/*CSS*/</style>
+</head>
+<body>
+<div id="world"></div>
+<div id="labels"></div>
+<div id="vignette"></div>
+<div id="letterbox"><i></i><i></i></div>
+<input id="speech" autocomplete="off" spellcheck="false" aria-label="What you say">
+
+<div id="hud" class="hidden">
+  <div class="hud-left">
+    <div id="daypill"><div class="dp-top"><span class="dp-day">Day <b id="hud-day">1</b></span><span class="dp-time" id="hud-time">08:00</span></div><div class="daybar"><i id="hud-bar"></i></div></div>
+    <div id="votepill"><span class="flame">🔥</span><span id="hud-vote">Vote in 3 days</span></div>
+    <div id="placepill"></div>
+  </div>
+  <div class="hud-right">
+    <div id="brain" title=""><i></i><span></span></div>
+    <button id="btn-board" class="hbtn">☕ Gossip Board <kbd>Tab</kbd></button>
+    <button id="btn-pause" class="hbtn round" title="Pause (P)">❚❚</button>
+  </div>
+</div>
+<div id="hint"></div>
+<div id="chyron"><span class="ctag">Drama</span><span class="ctext"></span></div>
+<div id="toast"></div>
+
+<div id="tip" class="pop">
+  <div class="tip-icon"></div>
+  <div class="tip-body"><h3></h3><p></p></div>
+  <button class="pill-btn" id="tip-ok">Got it <kbd>Enter</kbd></button>
+</div>
+
+<div id="board" class="screen">
+  <div class="board-card">
+    <div class="board-head">
+      <h2>☕ The Gossip Board</h2>
+      <div class="board-tabs">
+        <button data-tab="tea" class="on">The Tea</button>
+        <button data-tab="spread">My Rumors</button>
+        <button data-tab="pacts">Pacts &amp; Promises</button>
+        <button data-tab="cast">The Cast</button>
+        <button data-tab="votes">Votes</button>
+      </div>
+      <button class="xbtn" id="board-close">Close <kbd>Tab</kbd></button>
+    </div>
+    <div class="board-body" id="board-body"></div>
+  </div>
+</div>
+
+<div id="title" class="screen show">
+  <div class="title-inner">
+    <div class="logo-sub">a cozy little reality show</div>
+    <h1 class="logo">Gossiptown</h1>
+    <div class="logo-tag">Ten women. One tiny town. Every three days, somebody gets voted out.</div>
+    <div class="title-btns">
+      <button class="big-btn" id="t-new">New Season</button>
+      <button class="big-btn alt" id="t-continue">Continue</button>
+      <button class="big-btn ghost" id="t-settings">Settings</button>
+    </div>
+    <div class="title-foot">Every decision in town is made by Jev. Every word is written by Claude.</div>
+  </div>
+</div>
+
+<div id="namecard" class="screen">
+  <div class="card center pop">
+    <div class="card-kicker">Welcome, newcomer</div>
+    <h2>What's your name?</h2>
+    <input id="name-in" maxlength="16" placeholder="Rosie" autocomplete="off">
+    <p class="muted">The women of Gossiptown will call you by it. Usually behind your back.</p>
+    <button class="big-btn" id="name-ok">Arrive in town <kbd>Enter</kbd></button>
+  </div>
+</div>
+
+<div id="lowerthird"><div class="lt-img"></div><div class="lt-text"><div class="lt-arch"></div><div class="lt-name"></div><div class="lt-quote"></div></div></div>
+<div id="skip">Enter to continue</div>
+
+<div id="nightcard" class="screen">
+  <div class="card center pop">
+    <div class="card-kicker" id="night-kicker">Night falls</div>
+    <h2 id="night-title">The town goes to bed...</h2>
+    <div id="night-body"></div>
+    <button class="big-btn" id="night-ok">Start Day 2 <kbd>Enter</kbd></button>
+  </div>
+</div>
+
+<div id="endcard" class="screen">
+  <div class="card center wide pop">
+    <div class="card-kicker" id="end-kicker">Season over</div>
+    <h2 id="end-title"></h2>
+    <div id="end-body"></div>
+    <div class="title-btns"><button class="big-btn" id="end-new">New Season</button></div>
+  </div>
+</div>
+
+<div id="pause" class="screen">
+  <div class="card center pop">
+    <div class="card-kicker">Paused</div>
+    <h2>The whole town is frozen.</h2>
+    <p class="muted">Nothing moves and no Jev or Claude calls are made while paused.</p>
+    <div class="title-btns col">
+      <button class="big-btn" id="p-resume">Resume <kbd>P</kbd></button>
+      <button class="big-btn ghost" id="p-settings">Settings</button>
+      <button class="big-btn ghost" id="p-title">Back to title</button>
+    </div>
+    <div class="controls">
+      <div><kbd>W A S D</kbd> or <kbd>arrows</kbd> walk</div>
+      <div><kbd>Enter</kbd> talk to someone / say it</div>
+      <div><kbd>Tab</kbd> Gossip Board</div>
+      <div><kbd>P</kbd> pause</div>
+    </div>
+  </div>
+</div>
+
+<div id="settings" class="screen">
+  <div class="card center pop">
+    <div class="card-kicker">Settings</div>
+    <h2>How Gossiptown thinks</h2>
+    <div class="set-row"><div><b>Decisions</b><div class="muted" id="set-jev-status"></div></div></div>
+    <label class="set-label">Jev API key <span class="muted">(kept only in this browser)</span></label>
+    <input id="set-jev-key" type="password" placeholder="apikey_..." autocomplete="off">
+    <div class="muted set-note">If this page can't reach Jev, a stand-in that knows each woman's personality makes the decisions instead.</div>
+    <div class="set-row"><div><b>Dialogue</b><div class="muted" id="set-voice-status"></div></div></div>
+    <label class="set-label">Day length</label>
+    <div class="seg" id="set-day"><button data-v="180">3 min</button><button data-v="300">5 min</button><button data-v="480">8 min</button></div>
+    <div class="title-btns"><button class="big-btn" id="set-ok">Done</button></div>
+  </div>
+</div>
+
+<div id="votecards"></div>
+<div id="votehud"><div class="vh-title"></div><div class="vh-sub"></div></div>
+<div id="fade"></div>
+
+<script type="module">/*JS*/</script>
+</body>
+</html>

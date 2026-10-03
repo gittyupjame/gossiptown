@@ -1,8 +1,19 @@
 {
-  "name": "gossip-town",
-  "version": "0.1.0",
-  "description": "A living gossip village run on Jev decisions. Text prototype.",
+  "name": "gossiptown",
+  "version": "0.2.0",
+  "description": "A cosy, catty reality show in a tiny 3D town. Jev decides, Claude speaks.",
   "type": "module",
-  "scripts": { "start": "node src/main.js", "web": "node src/web.js" },
-  "engines": { "node": ">=20" }
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node server.js",
+    "test": "node test/sim-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0",
+    "three": "^0.186.1"
+  }
 }
