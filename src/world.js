@@ -1,0 +1,135 @@
+// The starting town. Code owns who people are; Jev decides what they do;
+// the LLM only writes the words they say.
+
+export const PLACES = {
+  square: { name: "the village square", desc: "A cobbled square around an old well. Everyone passes through." },
+  bakery: { name: "Marigold's bakery", desc: "Warm, small, smells of rye. A bench by the window." },
+  smithy: { name: "the smithy", desc: "Hot and loud. Sparks, an anvil, a water barrel." },
+  tavern: { name: "the Crooked Kettle tavern", desc: "Low beams, long tables, the town's real meeting hall." },
+  market: { name: "the market stalls", desc: "A row of stalls. Odo's is the biggest." },
+  garden: { name: "the herb garden", desc: "Juniper's garden at the edge of town. Quiet, a little wild." },
+  hall: { name: "the elder's hall", desc: "A stone hall where disputes are heard and town business is done." },
+};
+
+// Hour -> place. Missing hours carry the last one forward. "home" = off the map.
+const sched = (pairs) => pairs;
+
+export const VILLAGERS = [
+  {
+    id: "brannoc", name: "Brannoc Hale", job: "blacksmith", employer: null,
+    traits: ["gruff", "proud", "honest", "slow to trust", "quick-tempered when insulted"],
+    voice: "short blunt sentences, hates flattery",
+    secrets: [],
+    schedule: sched({ 8: "smithy", 12: "tavern", 13: "smithy", 18: "tavern", 20: "home" }),
+  },
+  {
+    id: "pip", name: "Pip Fennel", job: "blacksmith's apprentice", employer: "brannoc",
+    traits: ["eager", "gullible", "chatty", "wants to be liked", "looks up to Brannoc"],
+    voice: "fast and excitable, says 'honest!' a lot",
+    secrets: [],
+    schedule: sched({ 8: "smithy", 12: "square", 13: "smithy", 17: "square", 18: "tavern", 20: "home" }),
+  },
+  {
+    id: "marigold", name: "Marigold Ashby", job: "baker", employer: null,
+    traits: ["anxious", "kind", "dislikes gossip", "conflict-avoidant", "very loyal to friends"],
+    voice: "soft, apologetic, trails off",
+    secrets: ["Marigold owes Odo a large sum of money and is months behind on repaying it."],
+    schedule: sched({ 8: "bakery", 15: "market", 16: "bakery", 19: "home" }),
+  },
+  {
+    id: "odo", name: "Odo Crane", job: "merchant and moneylender", employer: null,
+    traits: ["sly", "greedy", "well-connected", "charming when it pays", "holds grudges"],
+    voice: "smooth, flattering, always hinting at a deal",
+    secrets: ["Odo uses a crooked scale at his market stall and shorts every customer."],
+    schedule: sched({ 8: "market", 12: "tavern", 13: "market", 17: "hall", 18: "tavern", 20: "home" }),
+  },
+  {
+    id: "wren", name: "Wren Tallow", job: "tavern keeper", employer: null,
+    traits: ["warm", "nosy", "the town's gossip hub", "protective of her tavern", "loves a good story"],
+    voice: "friendly, calls everyone 'love', asks lots of questions",
+    secrets: [],
+    schedule: sched({ 8: "tavern", 11: "market", 12: "tavern", 20: "tavern" }),
+  },
+  {
+    id: "silas", name: "Silas Moor", job: "tavern server", employer: "wren",
+    traits: ["bitter", "ambitious", "resentful of Wren", "sharp-tongued", "secretly insecure"],
+    voice: "dry, sarcastic, mutters asides",
+    secrets: ["Silas has been stealing coins from the tavern till for weeks."],
+    schedule: sched({ 8: "square", 10: "tavern", 15: "square", 16: "tavern", 20: "home" }),
+  },
+  {
+    id: "hesper", name: "Elder Hesper Vane", job: "village elder", employer: null,
+    traits: ["stern", "fair", "values order above all", "distrusts outsiders", "hates being lied to"],
+    voice: "formal, measured, never wastes a word",
+    secrets: [],
+    schedule: sched({ 8: "hall", 12: "square", 13: "hall", 18: "tavern", 19: "home" }),
+  },
+  {
+    id: "juniper", name: "Juniper Reed", job: "herbalist", employer: null,
+    traits: ["dreamy", "superstitious", "gentle", "a bit of an outsider herself", "notices small things"],
+    voice: "wandering, talks about omens and plants",
+    secrets: ["Juniper was run out of her last town after an accusation she won't talk about."],
+    schedule: sched({ 8: "garden", 11: "square", 12: "garden", 16: "bakery", 17: "garden", 19: "home" }),
+  },
+];
+
+// Starting feelings. affinity and trust run from -3 to 3. Unlisted pairs start at
+// a mild small-town default.
+const START_REL = [
+  ["brannoc", "odo", -2, -2, "Odo once cheated Brannoc on an iron order; they have not forgiven it"],
+  ["brannoc", "pip", 1.5, 1, "master and apprentice"],
+  ["pip", "brannoc", 2.5, 2.5, "Pip idolizes Brannoc"],
+  ["marigold", "odo", -1, -1, "she owes him money and fears him"],
+  ["odo", "marigold", 0, -1, "a debtor who is late"],
+  ["marigold", "juniper", 2, 2, "close friends"],
+  ["juniper", "marigold", 2, 2, "close friends"],
+  ["silas", "wren", -1, 0, "resents working for her"],
+  ["wren", "silas", 1, 1.5, "trusts him with the till"],
+  ["wren", "marigold", 1.5, 1.5, "old friends"],
+  ["hesper", "juniper", -0.5, -1, "wary of the newcomer-herbalist"],
+  ["odo", "hesper", 1, 0, "cultivates the elder's favor"],
+  ["hesper", "odo", 0.5, 0.5, "finds him useful"],
+  ["silas", "odo", 1, 0.5, "drinking companions"],
+  ["odo", "silas", 0.5, 0, "a useful pair of ears"],
+];
+
+export function newTown() {
+  const people = {};
+  for (const v of VILLAGERS) {
+    people[v.id] = {
+      ...structuredClone(v),
+      location: v.schedule[8],
+      activity: "starting the day",
+      mood: { anger: 0, fear: 0, cheer: 1 }, // 0..3 each
+      knows: {},        // rumorId -> { conf 0..1, from, day, time }
+      memory: [],       // short lines of what happened to them
+      intent: null,     // { kind, target } set by decisions, acted on later
+      gone: false,      // moved away or banished
+      employed: true,
+    };
+  }
+  const rel = {};
+  const ids = [...Object.keys(people), "player"];
+  for (const a of Object.keys(people)) {
+    rel[a] = {};
+    for (const b of ids) if (a !== b) rel[a][b] = b === "player" ? { affinity: 0, trust: -0.5, note: "a newcomer nobody knows" } : { affinity: 0.5, trust: 0.5, note: "neighbors" };
+  }
+  for (const [a, b, af, tr, note] of START_REL) rel[a][b] = { affinity: af, trust: tr, note };
+
+  const rumors = {};
+  let n = 0;
+  for (const v of VILLAGERS) for (const s of v.secrets) {
+    const id = "r" + ++n;
+    rumors[id] = { id, about: v.id, text: s, origin: "truth", isTrue: true, harm: -1.5, day: 0 };
+    people[v.id].knows[id] = { conf: 1, from: "self", day: 0, time: "08:00" };
+  }
+  // One secret has already leaked to one person.
+  people.wren.knows.r1 = { conf: 0.6, from: "odo", day: 0, time: "08:00" }; // Marigold's debt
+
+  return {
+    day: 1, minute: 8 * 60, // game clock, minutes since midnight
+    people, rel, rumors, nextRumor: n + 1,
+    player: { name: "the newcomer", location: "square", talkingTo: null, following: null, listening: false, journal: [], seen: {}, gifts: ["a loaf of rye", "a silver ribbon", "a pouch of 5 coins", "a jar of honey"] },
+    events: [], // { day, time, place, text, witnesses }
+  };
+}

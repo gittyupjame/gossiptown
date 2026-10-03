@@ -1,0 +1,8 @@
+{
+  "name": "gossip-town",
+  "version": "0.1.0",
+  "description": "A living gossip village run on Jev decisions. Text prototype.",
+  "type": "module",
+  "scripts": { "start": "node src/main.js" },
+  "engines": { "node": ">=20" }
+}
