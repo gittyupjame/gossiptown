@@ -1,119 +1,104 @@
 # Thistlewick
 
-A living gossip village where every decision a villager makes comes from Jev.
-You are a newcomer. Walk around, talk, eavesdrop, plant rumors, and watch what
-your words do to the town. This is the text prototype: 8 villagers, real-time
-days, no graphics yet.
+A reality show in a very small town. Nine women live in Thistlewick, and you
+are the new girl. Every three days the whole town gathers at the bandstand in
+the square and votes one woman out. Last one standing wins.
 
-## Run it
+Every decision anyone makes comes from Jev: where she goes, who she talks to,
+what she brings up, whether she believes a rumor, who she teams up with,
+whether she means it, and who she votes for. Claude only writes the words,
+after Jev has decided what they have to say.
 
-Needs Node 20+ and the `claude` CLI signed in (it writes the villagers' lines).
+## Play it
 
-    cd gossip-town
+Needs Node 20+ and the `claude` CLI signed in (it writes everyone's lines).
+
+    cd gossiptown
     echo "JEV_API_KEY=your-key-here" > .env
-    npm start            # continues save.json if there is one
-    node src/main.js --new   # fresh town
+    npm run web          # then open http://localhost:4747
 
-Or play the 3D version in the browser: `npm run web`, then open
-http://localhost:4747. The town sits on a small round planet. There are only
-three controls:
+`node src/web.js --new` starts a fresh town; otherwise it carries on from
+`save.json`.
 
-- Walk: arrow keys or WASD.
-- Talk: walk up to someone and press Enter. She stops where she is. Type what
-  you say and press Enter. Press Enter on an empty line to say goodbye.
-- Pause: P, or the button at the top right.
+The controls:
 
-Stand close to people talking and you hear every word; a few steps away you
-only catch part of it.
+- **Walk:** arrow keys or WASD.
+- **Talk:** walk up to someone and press Enter. She stops where she is. Type
+  what you say in the bubble over your head and press Enter. Press Enter on an
+  empty line to say goodbye.
+- **Rumors:** Tab opens the rumor panel.
+- **Pause:** P, or the button at the top right.
 
-The game starts paused. Press Play (or P) to start it and Pause to stop it.
-While paused, nothing moves, the clock stops, and no Jev or Claude calls are
-made. It also stops when no page is open, and each new day waits until you
-start it. The 3D drawing uses three.js, loaded from cdn.jsdelivr.net.
+Women will also walk up to you and start a conversation when Jev decides they
+want something from you: gossip, a deal, your vote, or a word about something
+you did.
 
-With no key, or if Jev can't be reached, the game falls back to a rough offline
-stand-in so you can still click around. The stand-in can't actually understand
-what you say, so play with the real Jev to judge the design.
+The game starts paused. While paused, nothing moves, the clock stops, and no
+Jev or Claude calls are made. It also stops when no page is open, and each new
+day waits until you start it. The 3D drawing uses three.js, loaded from
+cdn.jsdelivr.net, so the page needs the internet.
 
-Settings (env or `.env`):
+## How a season goes
+
+- **Days.** A day runs from 08:00 to 20:00 and lasts 6 real minutes. Everyone
+  wakes at home. Every 15 game minutes Jev picks where each woman goes, from
+  her job, the time, her mood, her plans and the game.
+- **Talking.** Stand close to two women talking and you hear every word; a few
+  steps away you only catch part of it. Stand too close and they may notice.
+  When you talk to someone, Jev reads each line you say: is it gossip, a
+  question, an offer to team up, a request to vote someone out? It decides if
+  she believes you, catches you lying, agrees, or says yes while planning to
+  break her word, and what gossip she hands over. If she decides to act on
+  what you told her, she goes and does it.
+- **Rumors.** What you say about someone becomes a rumor that spreads. It can
+  change as it is passed on. If someone asks the woman it is about and finds
+  out you made it up, people trust you less, and that becomes gossip too.
+- **Nights.** Each woman lies awake and decides who she most wants gone.
+- **The vote.** On vote days at 18:00 everyone gathers at the bandstand. The
+  host, Mayor Honey Bellweather, opens the vote. You pick a name. Each vote is
+  read out with a line from the woman who cast it, and a counter goes up over
+  the woman named. A tie goes to the host. The one with the most votes says
+  goodbye and walks out of town. If it's you, the game is over.
+
+## The rumor panel (Tab)
+
+- **The women:** how each one treats you, and what she has told you (that she
+  is with you, who she says she'll vote out, who she says she wants gone).
+  What people tell you is what they say. They might be lying.
+- **What I've heard:** every rumor you overheard or were told, and from whom.
+- **What I've said:** every story you started, who has heard it now, who
+  believes it, and how it changed on the way.
+- **About me:** what people are saying about you.
+- **Votes:** every past vote, ballot by ballot.
+
+## Settings (env or `.env`)
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `JEV_API_KEY` | none | Your TypeSafe key |
-| `DAY_SECONDS` | 600 | Real seconds for one day, 08:00 to 20:00 |
-| `CLAUDE_MODEL` | haiku | Model `claude -p` uses for dialogue |
-| `SHOW_JEV` | off | `1` prints Jev's read of each line you say |
-| `GOSSIP_FAKE_LLM` | off | `1` skips Claude and prints placeholders |
+| `DAY_SECONDS` | 360 | Real seconds for one day, 08:00 to 20:00 |
+| `VOTE_EVERY` | 3 | Days between votes |
+| `CLAUDE_MODEL` | haiku | Model `claude -p` uses for lines |
+| `CLAUDE_AT_ONCE` | 3 | How many `claude` calls run at the same time |
+| `GOSSIP_FAKE_LLM` | off | `1` skips Claude and shows placeholders |
+| `SHOW_JEV` | off | `1` logs Jev's read of each line you say |
+
+With no key, or if Jev can't be reached, the game falls back to a rough offline
+stand-in so you can still walk around. The stand-in can't understand what you
+say, so play with the real Jev to judge the design.
 
 `log.txt` records every Jev call: the state, the questions and the answers.
-`node src/selftest.js` plays a scripted day without the clock.
+`node src/selftest.js` plays a scripted day and a vote without the clock.
+There is also a bare terminal version: `npm start`.
 
-## Commands
+## The files
 
-    (terminal version only) look, go <place>, talk <name> (then just type;
-    "bye" to stop), listen, follow <name>, stop, give <name> <thing>, bag,
-    note <name> <text>, do <anything>, map, journal, wait, stats, quit
-
-## Design decisions (from Jamin's answers, Oct 3 2026)
-
-| Topic | Decision |
-| --- | --- |
-| Town | 12 villagers in the full game (8 in this prototype), all women, cozy fantasy, a small 3D planet |
-| Starting state | Villagers begin with secrets, feuds and friendships to uncover |
-| Day | About 10 real minutes; the clock keeps running while you talk |
-| Goal | Pure sandbox, over a season of about 30 days with a recap |
-| You | A newcomer nobody trusts yet. Villagers can gossip about you, catch your lies, and run you out of town |
-| Actions | Free typing, plus a wide set of actions (gifts, notes, following, eavesdropping, anything via `do`) |
-| Words | `claude -p` writes all dialogue; Jev decides what each line has to do |
-| Eavesdropping | You hear more the closer you are; `listen` hears everything but you may get caught |
-| Off-screen talks | Jev decides the outcome; no words are written unless you are there |
-| Consequences | Shoving fights, friendships and grudges, quitting and firing, moving away, banishment. No romance |
-| People | Can leave town for good; newcomers may arrive (not built yet) |
-| What you see | A social map you fill in from what you have seen and heard |
-
-## How it works
-
-Three layers: code keeps the state and the rules, Jev makes every judgement,
-and Claude only writes words.
-
-- **Nobody has a schedule.** Everyone wakes at home. Every 15 game minutes
-  each villager gets a Jev call for where to go: stay, a place, home, or go
-  and find a certain person. Jev decides from their job, the time, their mood,
-  where everyone is, and any plan they have.
-- **Plans are kept.** When a villager decides to do something (ask someone if
-  a story is true, warn them, confront them, pass it on, take it to the
-  elder), it becomes a plan. The plan goes into every later Jev call for them
-  until they do it. If they said they would go right away, they leave the
-  conversation and go. Claude is told exactly what was decided and is not
-  allowed to have anyone promise anything else.
-- **Checking a story.** When someone asks a person about a story about them,
-  Jev decides how that person answers (admit, deny, lie, dodge) and whether
-  the asker still believes it. If the newcomer made it up and gets caught,
-  both of them trust the newcomer less, and word gets around.
-- Every pair of people in the same place gets one for whether they talk,
-  what about, which piece of gossip gets passed on, how it changes their
-  feelings, and whether an argument turns into a fight.
-- **When gossip passes on**, a second Jev call decides whether the listener
-  believes it, whether the teller exaggerated it (Claude then rewrites the
-  rumor, so stories mutate), and what the listener does next: nothing, spread
-  it, confront someone, or take it to the elder.
-- **When you say something**, one Jev call reads your line: what you are
-  doing, who it is about, how damaging and how plausible it is, whether they
-  believe you, whether they catch you lying, how they now feel about you,
-  their tone, and what they decide to do. Claude then writes their reply.
-- **At night** each villager makes one big decision: carry on, quit, fire
-  someone, leave town, make peace, or ask the elder to run you out. The elder
-  weighs the town's mood about you.
-- Answers are **sampled from Jev's probabilities**, not just the top one, so
-  the same move can play out differently.
-- Everything is **remembered**: who knows which rumor, how sure they are, who
-  told them, and each person's recent memory, all of which feeds the next
-  decisions. Saved to `save.json` after every step.
-
-Feelings run from -3 to 3 for affinity and trust between every pair of
-people, including you.
-
-## Not built yet
-
-The 2D map, the 30-day season and its ending recap, new people moving in,
-jobs being taken over, and growing from 8 to 12 villagers.
+- `src/world.js`: the cast, the places, starting feelings and secrets.
+- `src/sim.js`: the town: moving, meeting, rumors, deals, the vote. Every
+  decision is a Jev call.
+- `src/llm.js`: every Claude prompt.
+- `src/game.js`: the clock, the days, nights and the vote.
+- `src/web.js`: the server for the 3D page.
+- `src/public/`: the page. `map.js` is the town layout, `town.js` builds the
+  town in 3D, `people.js` the women, `fx.js` the lighting and camera effects,
+  `client.js` everything else.

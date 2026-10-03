@@ -12,13 +12,33 @@ export const stats = { calls: 0, ms: 0 };
 
 const STYLE = () => `Setting: ${SHOW.name}, a cute little town that is also a reality show. Every few days the town votes one woman out; the last one standing wins.
 Tone: catty, gossipy reality TV. Everyone is two-faced, petty and playing to win. Sharp, funny and mean, but no slurs, no swearing stronger than "hell", no violence, no romance.
-Everyone in town is a woman (she/her), and so is the player, a newcomer. The only people in town are: ${VILLAGERS.map((v) => `${v.name} (${v.job})`).join(", ")}, the host ${SHOW.host.name}, and the newcomer. Do not invent other named people.
+Everyone in town is a woman (she/her), and so is the player, a newcomer. Nobody knows the newcomer's name: call her "the newcomer" or "the new girl", and never make up a name for her. The only people in town are: ${VILLAGERS.map((v) => `${v.name} (${v.job})`).join(", ")}, the host ${SHOW.host.name}, and the newcomer. Do not invent other named people.
 Write plain text only. No quotes around lines, no stage directions in asterisks, no emoji, no narration unless asked. Keep lines short: these appear in speech bubbles.`;
 
-export function ask(prompt, { timeoutMs = 45000 } = {}) {
+// Only a few `claude` processes run at once; too many at the same time makes every one
+// of them slow. Lines the player is waiting for (replies, openers) jump the queue.
+const MAX_AT_ONCE = Number(process.env.CLAUDE_AT_ONCE || 3);
+let running = 0;
+const queues = { now: [], later: [] };
+function nextInQueue() {
+  while (running < MAX_AT_ONCE && (queues.now.length || queues.later.length)) {
+    const job = queues.now.shift() || queues.later.shift();
+    running++;
+    job().finally(() => { running--; nextInQueue(); });
+  }
+}
+
+export function ask(prompt, { timeoutMs = 45000, urgent = false } = {}) {
   stats.calls++;
-  const t0 = Date.now();
   if (FAKE) return Promise.resolve(fakeLine(prompt));
+  return new Promise((resolve) => {
+    (urgent ? queues.now : queues.later).push(() => run(prompt, timeoutMs).then(resolve));
+    nextInQueue();
+  });
+}
+
+function run(prompt, timeoutMs) {
+  const t0 = Date.now();
   return new Promise((resolve) => {
     // A bare call: no tools, no MCP servers, no hooks or user settings, nothing saved.
     // Loading all of those made each line take minutes instead of seconds.
@@ -27,7 +47,7 @@ export function ask(prompt, { timeoutMs = 45000 } = {}) {
     let out = "";
     const timer = setTimeout(() => { p.kill(); resolve("..."); }, timeoutMs);
     p.stdout.on("data", (d) => (out += d));
-    p.on("close", () => { clearTimeout(timer); stats.ms += Date.now() - t0; resolve(out.trim().replace(/^"|"$/g, "") || "..."); });
+    p.on("close", () => { clearTimeout(timer); stats.ms += Date.now() - t0; resolve(out.trim().replace(/^"|"$/g, "").replace(/\*/g, "") || "..."); });
     p.on("error", () => { clearTimeout(timer); resolve(fakeLine(prompt)); });
     p.stdin.end(`${STYLE()}\n\n${prompt}`);
   });
@@ -71,7 +91,7 @@ ${history.slice(-8).join("\n") || "(just started)"}
 The newcomer says: ${line}
 Stance: ${stance}. ${react.join(" ")}
 ${ONLY_THESE}
-Reply as ${firstName(v)} in 1 to 2 short sentences, in your own voice.`);
+Reply as ${firstName(v)} in 1 to 2 short sentences, in your own voice.`, { urgent: true });
 }
 
 // A villager walks up to the newcomer and opens a conversation.
@@ -80,7 +100,7 @@ export function opener({ v, want, rumorText, feelings, recent }) {
 You ${feelings}. Recently: ${recent.join(" | ") || "nothing much"}.
 You walk up to the newcomer to ${want}.${rumorText ? ` You tell her this piece of gossip: "${rumorText}"` : ""}
 ${ONLY_THESE}
-Say your opening line to her as ${firstName(v)}: 1 or 2 short sentences, in your own voice.`);
+Say your opening line to her as ${firstName(v)}: 1 or 2 short sentences, in your own voice.`, { urgent: true });
 }
 
 // A conversation between two villagers that the player is close enough to hear.
@@ -114,18 +134,18 @@ Output only the sentence.`);
 export function voteLine({ v, targetName, recent }) {
   return ask(`You are ${describe(v)}
 It is the vote, in front of the whole town. You voted to send home ${targetName}. Recently: ${recent.join(" | ") || "nothing much"}.
-Say one short, catty sentence as you reveal your vote, in your own voice. Name ${targetName}.`);
+Say one short, catty sentence out loud as you reveal your vote, in your own voice. Name ${targetName}. Output only the words she says.`, { urgent: true, timeoutMs: 90000 });
 }
 
 // The one voted out says goodbye.
 export function partingLine({ v, votes }) {
   return ask(`You are ${describe(v)}
-The town just voted you out with ${votes} vote${votes === 1 ? "" : "s"}. Say one or two short sentences as you leave: bitter, dramatic or gracious, the way you would.`);
+The town just voted you out with ${votes} vote${votes === 1 ? "" : "s"}. Say one or two short sentences as you leave: bitter, dramatic or gracious, the way you would.`, { urgent: true, timeoutMs: 90000 });
 }
 
 // The host of the vote.
 export function hostLine({ moment }) {
   return ask(`You are ${SHOW.host.name}, the host of the vote. You speak like a ${SHOW.host.voice}.
 ${moment}
-Say one or two short sentences.`);
+Say one or two short sentences.`, { urgent: true, timeoutMs: 90000 });
 }

@@ -141,11 +141,13 @@ export function createGame(out, { fresh = false } = {}) {
     // everything slow starts at once: Jev decides the votes, Claude writes the host's opening
     const hostOpen = llm.hostLine({ moment: `The town has gathered in the square for the vote. ${cast.length + 1} women are left. Welcome everyone and build the tension before they vote.` });
     const ballotsP = sim.castVotes(s);
+    // each woman's line for her vote is written while the player is still choosing
+    const linesP = ballotsP.then((bs) => Promise.all(bs.map((b) => llm.voteLine({ v: s.people[b.voter], targetName: sim.nameOf(s, b.target), recent: s.people[b.voter].memory.slice(-3) }))));
     const mine = s.player.gone ? null : await (c.ballot ? c.ballot(candidates, await hostOpen) : Promise.resolve(null));
     const ballots = await ballotsP;
+    const lines = [...(await linesP), null];
     if (mine && s.people[mine]) ballots.push({ voter: "player", target: mine });
     const result = await sim.tally(s, ballots);
-    const lines = await Promise.all(ballots.map((b) => b.voter === "player" ? Promise.resolve(null) : llm.voteLine({ v: s.people[b.voter], targetName: sim.nameOf(s, b.target), recent: s.people[b.voter].memory.slice(-3) })));
     const outName = sim.nameOf(s, result.out);
     const [hostReveal, parting] = await Promise.all([
       llm.hostLine({ moment: `All the votes are in. ${result.tie ? "It was a tie, and you broke it." : ""} You are about to announce that ${outName} is leaving town. Say it with a dramatic pause.` }),

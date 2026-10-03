@@ -19,7 +19,7 @@ export const LOOKS = {
   odette:   { skin: "#f0caa8", hair: "#4a3a4a", style: "updo", dress: "#4a7ac0", trim: "#ffd86a", glasses: true, color: "#4a7ac0", height: 1.03 },
   juniper:  { skin: "#d8a47e", hair: "#8a9a4a", style: "long", dress: "#9ad07a", trim: "#ffffff", crown: true, color: "#9ad07a" },
   hesper:   { skin: "#f6dccc", hair: "#eeeaf4", style: "updo", dress: "#6a5aa8", trim: "#ffd86a", shawl: "#c8b8e8", glasses: true, color: "#6a5aa8", height: 1.02 },
-  honey:    { skin: "#ffe0c8", hair: "#ffd060", style: "waves", dress: "#ffd84f", trim: "#ff6a9a", sash: "#ff6a9a", color: "#ffd84f", height: 1.05 },
+  honey:    { skin: "#ffe0c8", hair: "#ffd060", style: "waves", dress: "#ffd84f", trim: "#ff6a9a", sash: "#ff6a9a", color: "#ffd84f", height: 1.05, noGhost: true },
 };
 
 const m = (color, extra) => toon(color, extra);
@@ -122,9 +122,15 @@ export function makePerson(look) {
   for (const k in mouths) { mouths[k].visible = k === "smile"; face.add(mouths[k]); }
   accessories(head, look);
 
-  // a see-through silhouette that only shows when she is behind a wall or a roof
-  const ghost = new THREE.MeshBasicMaterial({ color: look.color, transparent: true, opacity: 0.5, depthFunc: THREE.GreaterDepth, depthWrite: false });
-  for (const src of [skull, dress]) { const gm = new THREE.Mesh(src.geometry, ghost); gm.renderOrder = 5; gm.castShadow = false; src.add(gm); }
+  // A see-through silhouette that only shows when she is behind a wall or a roof.
+  // It is drawn after the town but before any person, so it is only hidden by the town,
+  // never by her own hair or clothes.
+  const ghost = new THREE.MeshBasicMaterial({
+    color: look.color, opacity: 0.5, depthFunc: THREE.GreaterDepth, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  });
+  root.traverse((o) => { if (o.isMesh) o.renderOrder = 2; });
+  if (!look.noGhost) for (const src of [skull, dress]) { const gm = new THREE.Mesh(src.geometry, ghost); gm.renderOrder = 1; gm.castShadow = false; gm.userData.ghost = true; src.add(gm); }
 
   return { root, body, legs, arms, head, eyes, brows, mouths, mood: "happy", talkUntil: 0, gestureUntil: 0, blinkAt: Math.random() * 4 };
 }

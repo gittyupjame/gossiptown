@@ -9,7 +9,7 @@ export const SHOW = {
 };
 
 export const PLACES = {
-  plaza:      { name: "the town square",        desc: "A cobbled square around a fountain, with the gazebo stage where the vote happens." },
+  plaza:      { name: "the town square",        desc: "A cobbled square around a fountain, with the bandstand where the vote happens." },
   salon:      { name: "Curl Up & Dye salon",     desc: "Ivy's hair salon. Everyone talks while they sit in the chairs." },
   cafe:       { name: "the Daisy Cup café",      desc: "Small tables under striped umbrellas. Good for being seen." },
   bakery:     { name: "Sugarplum Bakery",        desc: "Marigold's bakery, with a bench out front." },
@@ -83,7 +83,7 @@ export const VILLAGERS = [
     id: "hesper", name: "Hesper Vane", job: "head of the garden club", work: "park",
     traits: ["stern", "proud", "old guard", "hates being lied to", "thinks she should be in charge"],
     voice: "formal and clipped, never wastes a word",
-    agenda: "Restore order. Vote out liars and troublemakers, starting with the newcomer.",
+    agenda: "Restore order. Vote out liars and troublemakers, whoever they turn out to be.",
     secrets: ["Hesper rigged last year's flower show so her roses would win."],
   },
 ];
@@ -130,7 +130,7 @@ export function newTown() {
   const ids = [...Object.keys(people), "player"];
   for (const a of Object.keys(people)) {
     rel[a] = {};
-    for (const b of ids) if (a !== b) rel[a][b] = b === "player" ? { affinity: 0, trust: -0.5, note: "the new girl nobody knows" } : { affinity: 0.3, trust: 0.2, note: "neighbours" };
+    for (const b of ids) if (a !== b) rel[a][b] = b === "player" ? { affinity: 0.2, trust: 0, note: "the new girl; curious about her, nothing against her yet" } : { affinity: 0.3, trust: 0.2, note: "neighbours" };
   }
   for (const [a, b, af, tr, note] of START_REL) rel[a][b] = { affinity: af, trust: tr, note };
 
