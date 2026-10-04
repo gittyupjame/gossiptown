@@ -11,8 +11,8 @@
 
 export const SHOW = {
   name: "Gossiptown",
-  tagline: "Ten women. One tiny town. Every few days, somebody gets voted out.",
-  voteEvery: 3, // in-game days between votes
+  tagline: "Ten women. One tiny town. Every night, somebody gets voted out.",
+  voteEvery: 1, // in-game days between votes
   finalists: 3, // the season ends when this many are left (you included)
 };
 

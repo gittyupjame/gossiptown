@@ -767,7 +767,7 @@ async function intro() {
     await wait(180);
   };
   await hostSay(`Welcome to Gossiptown, sweetie! The coziest little town with the sharpest little knives.`);
-  await hostSay(`I'm Primrose, your host. Ten women live here, and every three days, at the firepit, they vote one of their own out of town.`);
+  await hostSay(`I'm Primrose, your host. Ten women live here, and every night, at the firepit, they vote one of their own out of town.`);
   cam.shot(new THREE.Vector3(0.6, 1.4, 8.4), 4.5, { from: new THREE.Vector3(0, 0, 0), height: 1.2 });
   await hostSay(`And now there's you, ${s.player.name}. The new girl. Nobody here trusts you. Yet.`);
   await hostSay(`Make friends. Make secret pacts. Spread a little gossip. Just don't get voted out.`);

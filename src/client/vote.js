@@ -78,7 +78,7 @@ export async function runVote(ctx) {
   } else {
     const n = sim.alive(s).length + (s.player.out ? 0 : 1);
     await hostSay(pick([`Good evening, ladies. Welcome to the firepit.`, `Ladies. Take your seats. You know why we're here.`, `Welcome back to the firepit, my little backstabbers.`]));
-    await hostSay(pick([`${n} of you sitting here. Three days of whispers, pacts and promises.`, `Smiles all week. Knives tonight.`, `I've heard things. Oh, I've heard things.`]));
+    await hostSay(pick([`${n} of you sitting here. A whole day of whispers, pacts and promises.`, `Smiles all day. Knives tonight.`, `I've heard things. Oh, I've heard things.`]));
     await hostSay(`Tonight, one of you leaves Gossiptown for good.`);
   }
 

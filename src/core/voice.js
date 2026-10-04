@@ -35,7 +35,7 @@ export function voiceStatus() {
 const first = (v) => v.first || v.name.split(" ")[0];
 const cast = () => VILLAGERS.map((v) => `${v.name} (${v.job})`).join(", ");
 
-const STYLE = (playerName) => `You write dialogue for "Gossiptown", a cozy-looking village reality show with a vicious heart. Ten women live in a tiny storybook town and every few days they vote one of their own out. Think reality TV: catty, two-faced, shady, dramatic, funny. Sweet to faces, savage behind backs. Everyone is a woman. No romance, no flirting. No violence beyond a shove. No magic spells.
+const STYLE = (playerName) => `You write dialogue for "Gossiptown", a cozy-looking village reality show with a vicious heart. Ten women live in a tiny storybook town and every night they vote one of their own out. Think reality TV: catty, two-faced, shady, dramatic, funny. Sweet to faces, savage behind backs. Everyone is a woman. No romance, no flirting. No violence beyond a shove. No magic spells.
 The cast: ${cast()}. The host is ${HOST.name}. The newcomer (the player) is called ${playerName}. Never invent other named townsfolk.
 Write plain spoken words only: no quotation marks, no stage directions, no asterisks, no emoji, no narration.`;
 
