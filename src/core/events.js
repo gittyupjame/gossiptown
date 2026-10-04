@@ -9,6 +9,8 @@
 import * as jev from "./jev.js";
 import { lookText } from "./looks.js";
 import * as sim from "./sim.js";
+import * as M from "./mind.js";
+import { read as readLine } from "./reading.js";
 
 const { first, firstOf, nameOf, alive, clamp } = sim;
 
@@ -237,6 +239,15 @@ export async function playerAct(s, text, { assigned = null, defaultSubject = nul
   const kPrior = Object.fromEntries(kinds.map((k) => [k, (RX[k]?.test(text) ? 6 : 0.08) * (f.acts?.[k] ? 1.4 : 1)]));
   kPrior.dodge = 0.2;
   if (seatRumor) { kPrior.confess *= 2; kPrior.deny = RX.deny.test(text) ? 9 : 1.2; }
+  // keywords miss tone and negation ("she's not fake"); the reading sets the direction
+  const rd = readLine(text, { names: Object.fromEntries(subs.filter((id) => id !== "player").map((id) => [id, firstOf(s, id)])) });
+  const warm = Math.max(rd.toSubject, rd.toListener), cold = Math.min(rd.toSubject, rd.toListener);
+  if (warm > 0.3 && cold > -0.2) { kPrior.praise *= 3; kPrior.call_out *= 0.15; kPrior.roast *= 0.5; }
+  if (cold < -0.3 && warm < 0.2) { kPrior.call_out *= 1.8; kPrior.praise *= 0.15; }
+  if (warm > 0.3 && cold < -0.3) kPrior.backhanded = (kPrior.backhanded || 0.1) * 4; // sweet and nasty at once
+  if (rd.acts.apology > 0.5) kPrior.apologize = Math.max(kPrior.apologize, 6);
+  if (rd.acts.vote_pitch > 0.5) kPrior.name_vote = Math.max(kPrior.name_vote, 8);
+  if (rd.acts.plead > 0.5) kPrior.plead = Math.max(kPrior.plead, 6);
   const sCrit = { none: "Nobody in particular / the whole town", ...Object.fromEntries(subs.map((id) => [id, nameOf(s, id)])) };
   const sPrior = { none: named.length || assigned || defaultSubject ? 0.2 : 3, ...Object.fromEntries(subs.map((id) => [id, named.includes(id) ? 8 : id === assigned || id === defaultSubject ? 4 : 0.1])) };
   const j = await jev.ask({ the_moment: `${f.title} (${f.blurb}). ${s.player.name}, the newcomer, has the floor in front of the whole town.`, said: text, ...(assigned ? { primrose_assigned: nameOf(s, assigned) } : {}) }, {
@@ -350,24 +361,22 @@ export async function crowdReacts(s, act, ui, { line = "" } = {}) {
     if (r) {
       let d = EFFECT[reaction] * (isX ? 1.6 : 1);
       if (isX && k === "praise" && reaction !== "offended") d = Math.max(d, 0.8);
-      r.affinity = clamp(r.affinity + d);
-      if (reaction === "offended") r.trust = clamp(r.trust - 0.3);
-      if (isX && Math.abs(d) >= 0.5) r.note = `${speakerName} ${what} at ${f.title} on day ${s.day}`;
+      M.shift(s, L.id, by, { aff: d, trust: reaction === "offended" ? -0.3 : 0, why: Math.abs(d) >= (isX ? 0.3 : 0.45) ? `${isX ? "about me, " : ""}${sim.short(what, 60)} at ${f.title}` : null });
     }
-    if (isX && HOSTILE.has(k)) L.mood.anger = Math.min(3, L.mood.anger + (reaction === "offended" ? 1 : 0.5));
+    if (isX && HOSTILE.has(k)) M.stir(L, { anger: reaction === "offended" ? 1 : 0.5, why: `${speakerName} went after her at ${f.title}` });
     // a story told in front of everyone travels to everyone
     if (claim && act.rumor && !isX) {
       if (act.kind === "deny") { const k0 = L.knows[act.rumor]; if (k0 && j.believe.yes) k0.conf = Math.max(0.1, k0.conf - 0.3); }
       else sim.learn(s, L, act.rumor, j.believe.yes ? 0.8 : 0.3, by);
     }
     if (act.kind === "confess" && act.rumor) sim.learn(s, L, act.rumor, 1, by);
-    if (isX && j.payback?.yes) { L.votePlan = { target: by, why: `${speakerName} ${what} at ${f.title}` }; }
+    if (isX && j.payback?.yes) M.planVote(s, L, by, `${speakerName} ${sim.short(what, 60)} at ${f.title}`, { strength: 2.5 });
     if (isX && j.snap?.yes && !snap) snap = L.id;
-    sim.remember(L, s, `at ${f.title}, ${speakerName} ${what}; I ${{ loved: "loved it", amused: "was entertained", unmoved: "wasn't moved", cringed: "cringed", offended: "was offended" }[reaction]}`);
+    sim.remember(L, s, `at ${f.title}, ${speakerName} ${what}; I ${{ loved: "loved it", amused: "was entertained", unmoved: "wasn't moved", cringed: "cringed", offended: "was offended" }[reaction]}`, isX ? 3 : Math.abs(EFFECT[reaction]) >= 0.4 ? 2 : 1);
   }));
   // a public vote naming is a vote plot everyone knows about
   if (act.kind === "name_vote" && x) {
-    if (by !== "player") s.people[by].votePlan = { target: x, why: "she said so in front of everyone" };
+    if (by !== "player") M.planVote(s, s.people[by], x, "she said so in front of everyone", { strength: 2.5 });
     const vid = sim.newRumor(s, { about: by, text: `${nameOf(s, by)} said in front of everyone that she'd send ${nameOf(s, x)} home.`, origin: "truth", isTrue: true, harm: -0.5, kind: "vote", target: x });
     for (const L of listeners) sim.learn(s, L, vid, 1, "self");
     if (by !== "player") sim.playerHears(s, vid, by, "heard at the show", ui);

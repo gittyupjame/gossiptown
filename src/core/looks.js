@@ -7,7 +7,8 @@ import * as jev from "./jev.js";
 import * as voice from "./voice.js";
 import { FASHION } from "./cast.js";
 import * as W from "./wardrobe.js";
-import { alive, first, clamp, remember, newRumor, learn, persona, feelings, clock } from "./sim.js";
+import { alive, first, remember, newRumor, learn, persona, feelings, clock } from "./sim.js";
+import { shift } from "./mind.js";
 
 export const VERDICTS = ["hideous", "tacky", "plain", "cute", "stunning"];
 const REACTIONS = {
@@ -129,13 +130,12 @@ export async function judge(s, v, ui, { where = "in town" } = {}) {
   let d = (verdict - 2) * 0.3 * (0.4 + F.vain);
   d += { admires: 0.3, approves: 0.1, shrugs: 0, sneers: -0.3, envious: -0.5, copycat: -0.8, suspicious: 0 }[reaction] ?? 0;
   if (prevRec?.key === key) d *= 0.3; // she has seen it before
-  r.affinity = clamp(r.affinity + d);
-  if (reaction === "suspicious") r.trust = clamp(r.trust - 0.3);
+  shift(s, v.id, "player", { aff: d, trust: reaction === "suspicious" ? -0.3 : 0, why: Math.abs(d) >= 0.3 ? `her look (${W.standout(o)}): ${reaction === "shrugs" ? VERDICTS[Math.round(verdict)] : REACTIONS[reaction].toLowerCase()}` : null });
   const item = W.standout(o);
   const rec = { key, verdict, reaction, threat: j.threat.yes, day: s.day, time: clock(s.minute), said: false, item };
   s.looks[v.id] = rec;
   remember(v, s, `sized up ${s.player.name}'s look (${item}): ${VERDICTS[Math.round(verdict)]}${reaction === "shrugs" ? "" : `, ${REACTIONS[reaction].toLowerCase()}`}`);
-  if (j.threat.yes) remember(v, s, `decided ${s.player.name} is a threat: everybody notices her`);
+  if (j.threat.yes) remember(v, s, `decided ${s.player.name} is a threat: everybody notices her`, 2);
   let rid = null;
   if (j.gossip.yes && reaction !== "shrugs") {
     const P = s.player.name, Fn = first(v);

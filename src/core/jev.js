@@ -25,6 +25,8 @@ let lastError = null;
 
 export const stats = { calls: 0, real: 0, standIn: 0, ms: 0 };
 export const recent = []; // the last calls, for the debug view
+let hook = null; // tests can watch every decision
+export function __setAskHook(fn) { hook = fn; }
 
 export function configure({ proxy = null, key = null } = {}) {
   cfg.proxy = proxy; cfg.key = key; failedAt = 0; lastError = null;
@@ -59,6 +61,7 @@ export async function ask(state, questions, label = "") {
   const out = {};
   for (const [k, q] of Object.entries(questions)) out[k] = normalize(q, raw[k]);
   recent.push({ label, live, state, answers: out });
+  hook?.(state, questions, label, out);
   if (recent.length > 60) recent.shift();
   return out;
 }

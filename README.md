@@ -118,6 +118,34 @@ Everything you hear is synthesized live in the browser with Web Audio (no sound 
   account (you are asked once). Without it, each woman falls back to a small
   phrasebook in her own voice.
 
+## How the town thinks
+
+Code keeps the books and Jev reads them before every decision (`src/core/mind.js`).
+
+- **Feelings come with reasons.** Every change in how one woman feels about
+  another carries a dated reason ("voted to send me home, day 3"). Strong
+  feelings are hard to push further. Overnight they drift back toward where
+  they started, unless fresh reasons hold them in place.
+- **Memory.** The day's small talk fades. Betrayals, fights, lies, pacts and
+  votes are never forgotten, and Jev sees them every time.
+- **Rumors.** Each woman tracks how sure she is of a rumor and who told her.
+  Hearing a story from a second, independent source makes her surer.
+  Unconfirmed hearsay fades.
+- **Plans.** Each woman keeps a short queue of plans. A promise isn't pushed
+  aside by a passing idea, plans she never gets round to lapse, and a broken
+  promise is remembered.
+- **Vote plans.** A vote plan has a strength and a reason. A grudge or a
+  promise outweighs a passing remark. Pact partners share their plans, so
+  blocs form. Women notice who is coming for them.
+- **One decision, then the next.** A conversation first settles what happened
+  (a row, a pact, a piece of gossip), then how it landed. The outcome can't
+  contradict the topic.
+- **Your words.** What you type is read for intent, who it's about, and how it
+  makes them look (`src/core/reading.js`). Negation is handled ("she's not
+  fake"). Jev reads the words themselves; the reading steers the offline
+  stand-in and gives Jev a hint.
+- `node test/realism.mjs [days]` measures all of this over a few days.
+
 ## Develop
 
 Needs Node 20+.
