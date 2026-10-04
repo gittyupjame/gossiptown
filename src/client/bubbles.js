@@ -143,7 +143,7 @@ export function typing(id, { name, placeholder = "Say something…", hint = "Ent
 
 // ---------- emotes ----------
 
-const EMOTES = { anger: "💢", gasp: "❗", whisper: "🤫", suspicious: "👀", handshake: "🤝", heart: "💖", sad: "💧", vote: "🗳️", crown: "👑", sparkle: "✨", question: "❓", tea: "☕", bell: "🔔", wave: "👋", star: "💫", pow: "💥", gift: "🎁", flower: "🌸" };
+const EMOTES = { anger: "💢", gasp: "❗", whisper: "🤫", suspicious: "👀", handshake: "🤝", heart: "💖", sad: "💧", vote: "🗳️", crown: "👑", sparkle: "✨", question: "❓", tea: "☕", bell: "🔔", wave: "👋", star: "💫", pow: "💥", gift: "🎁", flower: "🌸", laugh: "😂", cringe: "😬" };
 export function emote(id, kind) {
   if (!kind || !EMOTES[kind]) return;
   const el = document.createElement("div");

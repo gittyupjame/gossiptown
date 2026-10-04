@@ -252,3 +252,7 @@ body.cinema #hud, body.cinema #hint, body.cinema #chyron { opacity: 0; pointer-e
 #fightmeter i { display: block; height: 100%; width: 50%; background: linear-gradient(90deg, #ff6f9c, #ff9a6a); transition: width .12s; }
 #fightmeter span { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 10px; font: 700 11px Fredoka, system-ui, sans-serif; color: var(--ink); text-transform: uppercase; letter-spacing: .05em; }
 .board-pin { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; background: #fff3d6; }
+#showpill { background: #fff; padding: 4px 12px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--ink); box-shadow: var(--shadow); }
+#showpill.hidden { display: none; }
+#showpill.soon { background: var(--pink); color: #fff; animation: showsoon 1.2s ease-in-out infinite; }
+@keyframes showsoon { 50% { transform: scale(1.06); } }

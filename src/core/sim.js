@@ -20,7 +20,7 @@ import { PLACES, SHOW, ITEMS, TASTES } from "./cast.js";
 
 export const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 export const first = (v) => v.name.split(" ")[0];
-const clamp = (x, lo = -3, hi = 3) => Math.max(lo, Math.min(hi, x));
+export const clamp = (x, lo = -3, hi = 3) => Math.max(lo, Math.min(hi, x));
 const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
 
 export const alive = (s) => Object.values(s.people).filter((v) => !v.gone);
@@ -48,7 +48,7 @@ function nature(v) {
   return out.join(", ");
 }
 
-function remember(v, s, text) {
+export function remember(v, s, text) {
   v.memory.push(`day ${s.day} ${clock(s.minute)}: ${text}`);
   if (v.memory.length > 16) v.memory.splice(0, v.memory.length - 16);
 }
@@ -60,13 +60,13 @@ export function headline(s, text, kind, ui, { place, witnessed = true } = {}) {
   if (witnessed) ui.headline?.(text, kind);
 }
 
-function newRumor(s, { about, text, origin, isTrue = null, harm = 0, parent = null, kind = "gossip" }) {
+export function newRumor(s, { about, text, origin, isTrue = null, harm = 0, parent = null, kind = "gossip", target }) {
   const id = "r" + s.nextRumor++;
-  s.rumors[id] = { id, about, text, origin, isTrue, harm, parent, kind, day: s.day, time: clock(s.minute) };
+  s.rumors[id] = { id, about, text, origin, isTrue, harm, parent, kind, day: s.day, time: clock(s.minute), ...(target ? { target } : {}) };
   return id;
 }
 
-function learn(s, v, rumorId, conf, from) {
+export function learn(s, v, rumorId, conf, from) {
   const had = v.knows[rumorId];
   if (!had || had.conf < conf) v.knows[rumorId] = { conf, from, day: s.day, time: clock(s.minute) };
   // believing bad news about someone changes how you feel about them
@@ -79,7 +79,7 @@ function learn(s, v, rumorId, conf, from) {
 }
 
 // The player hears a story. Kept for the rumor tracker.
-function playerHears(s, rid, from, how, ui) {
+export function playerHears(s, rid, from, how, ui) {
   if (!rid || !s.rumors[rid]) return;
   if (s.player.heard.some((h) => h.rid === rid)) return;
   s.player.heard.push({ rid, from, how, day: s.day, time: clock(s.minute) });
@@ -104,13 +104,13 @@ function allianceLines(s, v) {
   });
 }
 
-function showText(s) {
+export function showText(s) {
   const d = daysToVote(s);
   const left = alive(s).length + (s.player.out ? 0 : 1);
   return `Day ${s.day} of a reality show. ${left} women left. ${d === 0 ? "The vote is TONIGHT at the firepit." : `The next vote is in ${d} day${d > 1 ? "s" : ""}.`} At every vote the town votes one woman out. Everyone wants to be the last one standing.`;
 }
 
-function persona(s, v) {
+export function persona(s, v) {
   return {
     who: `${v.name}, the ${v.employed ? v.job : `out-of-work ${v.job}`} (${v.archetype})`,
     personality: v.traits.join(", "),
@@ -127,7 +127,7 @@ function persona(s, v) {
   };
 }
 
-function feelings(s, a, b) {
+export function feelings(s, a, b) {
   const id = b === "player" ? "player" : b.id;
   const r = s.rel[a.id][id];
   return `${first(a)} ${feel(r.affinity)} ${nameOf(s, id)} and ${trust(r.trust)} her (${r.note})`;
@@ -136,7 +136,7 @@ function feelings(s, a, b) {
 const candidatesFor = (s, v) => [...alive(s).filter((o) => o.id !== v.id).map((o) => o.id), ...(s.player.out ? [] : ["player"])];
 
 // How dangerous someone is to keep around: well liked people win these shows.
-function popularity(s, id) {
+export function popularity(s, id) {
   const vs = alive(s).filter((v) => v.id !== id);
   return vs.reduce((t, v) => t + s.rel[v.id][id].affinity, 0) / Math.max(1, vs.length);
 }
@@ -164,7 +164,7 @@ export function planText(s, it) {
   return text + (it.why ? ` (because ${it.why})` : "");
 }
 
-function setPlan(s, v, plan) {
+export function setPlan(s, v, plan) {
   if (plan.target === v.id) return;
   if (plan.kind === "report") plan.target = "hesper";
   if (plan.target === "hesper" && (v.id === "hesper" || s.people.hesper?.gone)) return;
@@ -206,6 +206,12 @@ export async function tick(s, ui) {
   // the vote bell: on vote days everyone heads to the firepit at 19:00
   if (isVoteDay(s) && s.minute >= 19 * 60) {
     for (const v of alive(s)) if (v.location !== "firepit" && v.id !== s.player.talkingTo) { v.location = "firepit"; ui.moved?.(v); }
+    return;
+  }
+  // Primrose's show: half an hour before, everyone heads over
+  const ev = s.event && s.event.day === s.day && !s.event.done ? s.event : null;
+  if (ev && s.minute >= ev.minute - 30) {
+    for (const v of alive(s)) if (v.location !== ev.place && v.id !== s.player.talkingTo) { v.location = ev.place; ui.moved?.(v); }
     return;
   }
   const found = (v) => v.intent?.target && v.intent.target !== "player" && s.people[v.intent.target]?.location === v.location;
@@ -499,7 +505,7 @@ async function encounter(s, a, b, place, ui) {
 
 // A cat fight between two cast members. Jev decides who comes out on top and which
 // side everyone who saw it takes; the fight then travels as gossip and counts at the vote.
-async function brawl(s, a, b, place, ui, seen) {
+export async function brawl(s, a, b, place, ui, seen) {
   const watchers = at(s, place).filter((v) => v.id !== a.id && v.id !== b.id);
   const qs = {
     winner: { type: "choice", instructions: `${first(a)} started a cat fight with ${first(b)}. Who comes out of it looking better?`, criteria: { a: `${first(a)}, the one who started it`, b: first(b) }, prior: { a: 0.5 + a.bias.nerve + a.bias.temper * 0.5, b: 0.5 + b.bias.nerve + b.bias.temper * 0.5 } },

@@ -172,6 +172,34 @@ Output only the sentence.`, { maxMs: 10000 });
   return text;
 }
 
+// ---------- Primrose's daily shows ----------
+
+// Every speaker's moment at a show, written in one call while Primrose opens it.
+// items: [{ v, what }] where `what` says what she does with the floor. Returns { id: line }.
+export async function showLines({ items, title, blurb, place, playerName }) {
+  if (!items.length) return {};
+  const text = await raw(`${STYLE(playerName)}
+
+The host Primrose is running a show for the whole town called "${title}" at ${place}: ${blurb}
+Each of these women gets the floor in front of everyone and does exactly what is listed.
+${items.map((it) => `- ${describe(it.v)} What she does: ${it.what}.`).join("\n")}
+Write what each one says, each starting with her first name and a colon, in her own voice, playing to the crowd. One or two sentences, under 32 words each. ${ONLY} No other text.`, { maxMs: 25000, pri: "vote" });
+  const out = {};
+  for (const l of parseLines(text, items.map((it) => it.v))) out[l.id] = l.text;
+  return out;
+}
+
+export async function showLine({ v, title, blurb, place, what, context, playerName }) {
+  const text = await raw(`${STYLE(playerName)}
+
+You are ${describe(v)}
+The host Primrose is running a show for the whole town called "${title}" at ${place}: ${blurb}
+${context ? `${context}\n` : ""}In front of everyone, you ${what}.
+${ONLY}
+Say it as ${first(v)}, one or two sentences, under 30 words, playing to the crowd.`, { maxMs: 15000, pri: "vote" });
+  return text || phrase.show({ v, what });
+}
+
 // ---------- the vote ----------
 
 export async function partingShot({ v, playerName, votedBy, betrayedBy }) {
@@ -286,6 +314,24 @@ export const phrase = {
   parting({ v, betrayedBy }) {
     if (betrayedBy.length) return `${betrayedBy[0]}, I hope it was worth it. Enjoy your little town.`;
     return pick(["Fine. This town never deserved me.", "Remember, I let you win.", "You'll all be begging me to come back."]);
+  },
+  show({ v, what }) {
+    const who = (what.match(/(?:about|to|at|send|roasted|out) ([A-Z][a-z]+)/) || [])[1] || "her";
+    if (/lovely|nice|toast/.test(what)) return pick([`To ${who}. Honestly? The best thing about this town.`, `I just want to say ${who} is a gem. There. I said it.`, `${who}, you're a sweetheart and everyone knows it.`]);
+    if (/backhanded/.test(what)) return pick([`${who} is so brave. Wearing that. In public.`, `I love how ${who} never lets being wrong slow her down.`, `${who}, you look great. For you.`]);
+    if (/called out|fires right back|fired back/.test(what)) return pick([`${who}, we all know what you did. Don't smile at me like that.`, `I'm done pretending, ${who}. You're fake and everyone here knows it.`, `${who}. You know exactly why I'm saying your name.`]);
+    if (/roast|joke/.test(what)) return pick([`${who} is like a sunny day. Rare, and everyone's relieved when it's over.`, `I'd roast ${who}, but life already did.`, `${who} has a face for gossip columns. The back page.`]);
+    if (/told the whole crowd|tells everyone/.test(what)) return pick(["Okay, I wasn't going to say this, but... everyone deserves to know.", "So. Apparently. And I have this on very good authority...", "You did not hear it from me. Well. You did. Right now."]);
+    if (/apolog|sorry/.test(what)) return pick([`${who}, I'm sorry. I mean it. Mostly.`, `I owe ${who} an apology. So... sorry. There.`, `I was wrong about ${who}. That's hard for me to say.`]);
+    if (/confess|admit/.test(what)) return pick(["Fine. It's true. Happy now?", "I'm not proud of it. But yes.", "Okay. Deep breath. Yes. I did."]);
+    if (/denied|denies/.test(what)) return pick(["That is a filthy lie and whoever started it knows it.", "Never. Not once. Next question.", "Wow. Creative. Also completely made up."]);
+    if (/begged|keep her|stay/.test(what)) return pick(["I love this town. Please don't send me home. I've got so much left to give!", "Keep me. I'm the only one here who's actually fun.", "Vote with your hearts, ladies. Your hearts say me."]);
+    if (/send .* home/.test(what)) return pick([`${who}. Sorry, not sorry.`, `If it's up to me, ${who} packs tonight.`, `${who} has to go. Everyone's thinking it.`]);
+    if (/laughed/.test(what)) return pick(["Ha! Cute. Next.", "Oh, that's adorable. Is that all?", "Sweetie, I've been roasted by better."]);
+    if (/hurt|quiet/.test(what)) return pick(["...Wow. Okay.", "I... don't have anything to say to that.", "Fine. Whatever."]);
+    if (/heckle/.test(what)) return pick([`Oh please, ${who}. Nobody believes you.`, `Liar! Liar!`, `Sure, ${who}. Sure.`]);
+    if (/stick|defend/.test(what)) return pick([`Leave ${who} alone. She's the only honest one here.`, `I believe ${who}. So back off.`, `${who} doesn't deserve this.`]);
+    return pick(["I love everyone here equally. Next question.", "No comment, darling.", "I'm just happy to be here."]);
   },
   voteReaction({ v, voter, wasAlly }) {
     if (wasAlly) return pick([`${name(voter)}?! Seriously?`, `Wow. ${name(voter)}. Wow.`, `Et tu, ${name(voter)}?`]);

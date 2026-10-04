@@ -74,7 +74,9 @@ function spread(s) {
         <div class="s-text">“${esc(r.text)}”</div>
         <div class="t-foot"><span class="chip good">${believe} believe it</span><span class="chip">${doubt} doubt it</span><span class="chip">${fam.length} version${fam.length > 1 ? "s" : ""}</span>${backfire ? `<span class="chip bad">it came back on you</span>` : ""}</div>
         <div class="section-title">You told</div>
-        ${told.map((t) => t.to === "board"
+        ${told.map((t) => t.to === "crowd"
+          ? `<div class="vote-row"><span class="avatar board-pin">🎤</span> <b>Said it in front of everyone</b> <span class="muted">Day ${t.day} ${t.time}</span></div>`
+          : t.to === "board"
           ? `<div class="vote-row"><span class="avatar board-pin">📌</span> <b>Pinned anonymously</b> <span class="muted">Day ${t.day} ${t.time}</span> <span class="chip">${(s.notes || []).find((n) => n.rid === t.rid)?.readBy.length || 0} walked past it</span></div>`
           : `<div class="vote-row">${img(t.to)} <b>${nm(s, t.to)}</b> <span class="muted">Day ${t.day} ${t.time}</span> ${t.believed ? `<span class="chip good">bought it</span>` : `<span class="chip bad">didn't buy it</span>`}</div>`).join("")}
         ${fam.length > 1 ? `<div class="section-title">How it's being told now</div>${fam.slice(1).map((id) => `<p class="muted">“${esc(s.rumors[id].text)}”</p>`).join("")}` : ""}

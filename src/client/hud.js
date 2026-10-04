@@ -1,6 +1,7 @@
 // The screen furniture: HUD, hints, headlines, first-time tips, and the cards between days.
 
-import { SHOW, ITEMS } from "../core/cast.js";
+import { SHOW, ITEMS, PLACES } from "../core/cast.js";
+import { FORMATS } from "../core/events.js";
 
 const $ = (id) => document.getElementById(id);
 export { $ };
@@ -19,6 +20,10 @@ export function updateHud(s, placeName) {
   $("hud-vote").textContent = d === 0 ? (m >= 19 * 60 ? "To the firepit!" : "Vote TONIGHT") : `Vote in ${d} day${d > 1 ? "s" : ""}`;
   pill.classList.toggle("tonight", d === 0);
   $("placepill").textContent = placeName;
+  const ev = s.event && s.event.day === s.day && !s.event.done ? s.event : null;
+  const sp = $("showpill");
+  sp.classList.toggle("hidden", !ev);
+  if (ev) { const f = FORMATS[ev.format]; const t = `${f.icon} ${f.title} · ${PLACES[ev.place].short} · ${String(Math.floor(ev.minute / 60)).padStart(2, "0")}:${String(ev.minute % 60).padStart(2, "0")}`; if (sp.textContent !== t) sp.textContent = t; sp.classList.toggle("soon", s.minute >= ev.minute - 30); }
   const it = s.player.carrying && ITEMS[s.player.carrying];
   const cp = $("carrypill");
   cp.classList.toggle("hidden", !it);
@@ -53,7 +58,7 @@ export function toast(text) {
 
 const queue = [];
 let showing = false;
-const TAGS = { drama: "Drama", bad: "Uh oh", vote: "The Vote", good: "Nice", info: "Meanwhile", tea: "Fresh tea" };
+const TAGS = { drama: "Drama", bad: "Uh oh", vote: "The Vote", good: "Nice", info: "Meanwhile", tea: "Fresh tea", show: "Showtime" };
 export function chyron(text, kind = "drama") {
   queue.push({ text, kind });
   if (queue.length > 4) queue.shift();
@@ -92,6 +97,7 @@ export const TIPS = {
   "fight-you": { icon: "💥", title: "She's coming for you!", text: "Mash <kbd>Enter</kbd> to hold your own, or walk away to back down. Win and she'll be scared of you. Lose and the whole town hears about it. Either way, whoever started it pays at the vote." },
   gift: { icon: "🎁", title: "A little something", text: "You're carrying a gift. Talk to someone and hand it over (\"I brought you this\"). Every woman has one thing she adores and one she can't stand. Some will wonder what you want for it." },
   snoop: { icon: "📬", title: "Snooping", text: "The first peek in a woman's mailbox can turn up her secret. Anyone nearby might see you, and if she's home she might be watching from the window." },
+  show: { icon: "🎤", title: "Primrose's show", text: "Every day Primrose runs a different show somewhere in town, and everyone has to come. When it's your turn, type what you say in front of the whole crowd. Every woman listening decides whether she loves it or holds it against you, and they remember." },
   note: { icon: "📌", title: "An anonymous note", text: "Your note stays up for two days. Anyone passing the square or the market may read it. Nosy ones (and anyone you've told the same story to) may work out you wrote it." },
 };
 

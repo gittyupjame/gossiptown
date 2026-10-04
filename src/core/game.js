@@ -4,6 +4,7 @@
 
 import { newTown, SHOW } from "./cast.js";
 import * as sim from "./sim.js";
+import * as events from "./events.js";
 
 const SAVE_KEY = "gossiptown.season.v2";
 
@@ -22,6 +23,7 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
   function newSeason(playerName) {
     s = newTown({ playerName });
     s.phase = "day";
+    planShow();
     save();
     return s;
   }
@@ -32,8 +34,16 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
     s.player.talkingTo = null;
     // seasons saved before there was anything to do around town
     s.notes ??= []; s.player.snooped ??= {}; s.player.fights ??= 0; s.player.carrying ??= null;
+    s.shows ??= [];
     if (s.phase === "day") s.minute = Math.max(8 * 60, Math.min(s.minute, 19 * 60 + 45));
+    if ((s.phase === "day" || s.phase === "show") && !events.showOf(s)) { s.phase = "day"; planShow(); }
     return s;
+  }
+
+  // Primrose picks today's show (Jev decides which); the town plays on meanwhile.
+  function planShow() {
+    const day = s.day;
+    events.planDay(s).then((ev) => { if (s.day === day) { save(); ui.showPlanned?.(s, ev); } }).catch((e) => console.error("show planning failed", e));
   }
 
   // Called every frame while playing.
@@ -47,6 +57,11 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
     s.minute = Math.min(20 * 60, s.minute + step);
     ui.clock?.(s);
     if (sim.isVoteDay(s) && before < 19 * 60 && s.minute >= 19 * 60) ui.bell?.(s);
+    const ev = events.showOf(s);
+    if (ev && !ev.done) {
+      if (!ev.bell && s.minute >= ev.minute - 30) { ev.bell = true; ui.showBell?.(s, ev); }
+      if (s.minute >= ev.minute) { endTalk(); s.phase = "show"; save(); ui.showStart?.(s, ev); return; }
+    }
     if (Math.floor(s.minute / 15) !== Math.floor(before / 15) && !busy && s.minute < 20 * 60) runTick();
     // a slow tick (a long Jev or dialogue call) never holds up the evening for long
     if (s.minute >= 20 * 60 && (!busy || performance.now() - busyAt > 15000)) dusk();
@@ -80,8 +95,17 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
     s.day += 1; s.minute = 8 * 60; s.phase = "day";
     s.player.location = "plaza"; s.player.talkingTo = null;
     for (const v of sim.alive(s)) { v.location = "home"; v.approaching = false; }
+    planShow();
     save();
     ui.dawn?.(s);
+  }
+
+  // ---------- Primrose's show ----------
+
+  function endShow() {
+    events.finish(s);
+    if (s.phase === "show") s.phase = "day";
+    save();
   }
 
   // ---------- the vote ----------
@@ -188,7 +212,7 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
 
   return {
     newSeason, load, save, update, nextDay, startBallots, resolveVote, afterVote, voteSetup,
-    startTalk, endTalk, say, night, setDaySeconds, pickUp, snoop, postNote, fight,
+    startTalk, endTalk, say, night, setDaySeconds, pickUp, snoop, postNote, fight, endShow,
     state: () => s,
     busy: () => busy,
   };

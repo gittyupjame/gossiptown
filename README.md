@@ -58,6 +58,34 @@ she storms over after catching you in her mail or reading your note about
 her. You can also start one ("fight me"). In a fight, mash Enter to hold your
 own or walk away to back down.
 
+## Primrose's daily show
+
+Once a day Primrose gathers the whole town somewhere for a show, and everyone
+has to come. The show pill in the HUD says which one, where and when, and the
+women head over half an hour before. There are nine formats, each with its own
+place and rules:
+
+| Show | Where | What happens |
+|---|---|---|
+| The Toast | the tavern | everyone raises a glass to someone, sweetly or not |
+| Clear the Air | the plaza | call someone out to her face; she answers back |
+| The Hot Seat | the town hall | one woman answers for the juiciest story about her, and the crowd heckles or defends |
+| Who Would You Send Home? | the firepit | name the woman you'd vote out, out loud |
+| Hot & Cold | the salon | Primrose hands you a target: one compliment, one dig |
+| Morning Tea | the bakery | everyone spills one piece of gossip in public |
+| The Soapbox | the market | stand on a crate and tell the town why you should stay |
+| True Confessions | the garden | confess something or apologize to someone |
+| The Roast | the smithy | roast someone; she can fire back |
+
+Jev picks the show (Primrose plays producer and never repeats one from the
+last three days), who gets the floor and what each woman does with it. You
+always get a turn: type what you say in front of everyone. Every woman in the
+crowd decides how it landed (loved it, laughed, shrugged, cringed, offended),
+and that changes how she feels about the speaker, what she believes, who she
+plans to vote for, and sometimes it turns into a cat fight on the spot. It all
+goes into their memories, so it comes up again in conversations and at the
+vote.
+
 ## Brains
 
 - **Decisions (Jev).** Paste your Jev key in Settings on the title screen. The
@@ -86,14 +114,16 @@ Add `?fast` to the URL for 8x game speed with lighter graphics.
     node test/play.mjs        # headless browser run through talking and the Gossip Board
     node test/vote.mjs        # headless run of a vote night (FINALE=1 for the finale)
     node test/acts-smoke.mjs  # gifts, snooping, notes and fights without a page
-    node test/acts.mjs        # the same things in a headless browser
+    node test/acts.mjs
+    node test/show-smoke.mjs  # every show format through the core (offline stand-in)
+    FORMAT=roast node test/show.mjs   # headless run of one show        # the same things in a headless browser
 
 ### Layout
 
 - `src/core`: the game itself, no graphics. `cast.js` (the women, places,
   alliances), `sim.js` (encounters, rumors, alliances, walk-ups, votes),
-  `game.js` (clock, days, vote nights, saving), `jev.js`, `voice.js`.
+  `game.js` (clock, days, vote nights, saving), `events.js` (Primrose's shows), `jev.js`, `voice.js`.
 - `src/client`: the 3D town (three.js). `town.js` and `layout.js` build the
   town, `people.js` the characters, `bubbles.js` the speech, `hud.js` the
   HUD, tips and screens, `tracker.js` the Gossip Board, `vote.js` the vote
-  ceremony, `fight.js` the cat fight dust cloud, `main.js` ties it together.
+  ceremony, `fight.js` the cat fight dust cloud, `spotlight.js` Primrose's show, `main.js` ties it together.

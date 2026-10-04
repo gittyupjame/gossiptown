@@ -11,6 +11,8 @@ import * as H from "./hud.js";
 import * as L from "./layout.js";
 import { initBoard, render as renderBoard } from "./tracker.js";
 import { runVote } from "./vote.js";
+import { runShow } from "./spotlight.js";
+import { FORMATS } from "../core/events.js";
 import { createGame, hasSave } from "../core/game.js";
 import * as sim from "../core/sim.js";
 import * as jev from "../core/jev.js";
@@ -62,7 +64,7 @@ const pics = portraits([...VILLAGERS, { id: "player", look: PLAYER_LOOK }, { id:
 
 // ---------- state ----------
 
-let mode = "title"; // title | intro | play | fight | vote | night | end
+let mode = "title"; // title | intro | play | fight | show | vote | night | end
 let paused = false;
 let game = null;
 let talk = null; // { id, bubble, busy }
@@ -209,10 +211,11 @@ const ui = {
     return d <= 6.5 ? "full" : d <= 13 ? "part" : "none";
   },
   distance(v) { const p = people[v.id]; if (!p || p.inside || p.gone) return 999; return Math.hypot(p.walker.x - me.walker.x, p.walker.z - me.walker.z); },
-  exchange: (e) => playExchange(e),
+  exchange: (e) => { if (mode === "play") playExchange(e); },
   headline: (text, kind) => H.chyron(text, kind),
   emote: (id, kind) => { if (people[id] && !people[id].inside) B.emote(id, kind); },
   fight(a, b, { winner } = {}) {
+    if (mode !== "play" && mode !== "show") return;
     const pa = people[a], pb = people[b];
     if (!pa || !pb || pa.inside || pb.inside || pa.gone || pb.gone) return;
     if (talk && (talk.id === a || talk.id === b)) endTalk(false);
@@ -247,6 +250,16 @@ const ui = {
     H.tip("bell");
   },
   voteNight: () => startVote(),
+  showPlanned(s, ev) {
+    const f = FORMATS[ev.format];
+    if (mode === "play") H.chyron(`Today Primrose hosts ${f.icon} ${f.title} at ${PLACES[ev.place].name}, ${sim.clock(ev.minute)}. ${f.blurb}`, "show");
+  },
+  showBell(s, ev) {
+    const f = FORMATS[ev.format];
+    H.chyron(`Primrose is gathering everyone at ${PLACES[ev.place].name} for ${f.title}!`, "show");
+    B.emote(HOST.id, "bell");
+  },
+  showStart: () => startShow(),
   nightStart: () => {},
   nightDone: (s, lines) => showNight(s, lines),
 };
@@ -363,7 +376,8 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 // Mash Enter to hold your own; walk away to back down. Jev's town decides what it means.
 
 async function playerBrawl(id, by) {
-  if (mode !== "play") return;
+  if (mode !== "play" && mode !== "show") return;
+  const back = mode;
   const s = S();
   const p = people[id], v = s.people[id];
   if (!p || p.inside || p.gone) return;
@@ -412,7 +426,7 @@ async function playerBrawl(id, by) {
   B.emote(result === "won" ? id : "player", "star");
   const gloat = { won: ["Ow! Fine! FINE!", "You'll pay for that.", "My hair!"], lost: ["And stay down, new girl.", "That's what you get.", "Don't EVER cross me."], backed_down: ["That's right, walk away.", "Coward!", "Run along, sweetie."] }[result];
   B.say(id, pick(gloat), { name: first(id), color: colorOf(id), hold: 2.4 });
-  mode = "play";
+  mode = back;
   const r = await game.fight(id, { by, result });
   if (r) {
     const parts = [];
@@ -771,6 +785,7 @@ async function intro() {
   cam.shot(new THREE.Vector3(0.6, 1.4, 8.4), 4.5, { from: new THREE.Vector3(0, 0, 0), height: 1.2 });
   await hostSay(`And now there's you, ${s.player.name}. The new girl. Nobody here trusts you. Yet.`);
   await hostSay(`Make friends. Make secret pacts. Spread a little gossip. Just don't get voted out.`);
+  await hostSay(`Oh, and every day I host a little show somewhere in town. Everyone comes, everyone watches, and whatever you say up there, the whole town remembers.`);
   await hostSay(`The last three standing face a jury of every woman they sent home. Win, and you're the Queen of Gossiptown!`);
   await hostSay(`Now, let me introduce the ladies...`, 2200);
   for (const v of VILLAGERS) {
@@ -810,9 +825,42 @@ function resume() {
   const host = people[HOST.id].walker; host.x = -37; host.z = -2.4;
   if (s.phase === "night") { mode = "night"; game.night(); return; }
   if (s.phase === "vote") { startPlay(); startVote(); return; }
+  if (s.phase === "show") { startPlay(); startShow(); return; }
   if (s.over) { showEnd(); return; }
   startPlay();
   H.fade(false);
+}
+
+// ---------- Primrose's daily show ----------
+
+const showCtx = {
+  get game() { return game; },
+  get ui() { return ui; },
+  walker(id) { const p = people[id]; if (p.inside) { p.inside = false; p.model.root.visible = true; } return p.walker; },
+  model: (id) => people[id]?.model,
+  cam, wait, waitOrEnter,
+  npcFight: (a, b, o) => ui.fight(a, b, o),
+  playerFight: (id, by) => playerBrawl(id, by),
+};
+
+let showRunning = false;
+async function startShow() {
+  if (showRunning) return;
+  showRunning = true;
+  endTalk(false);
+  mode = "show";
+  H.showHud(false);
+  H.hint("");
+  setXray(false);
+  try { await runShow(showCtx); } catch (e) { console.error("show failed", e); H.cinema(false); H.voteHud(null); game.endShow(); }
+  showRunning = false;
+  setXray(true);
+  const s = S();
+  for (const p of Object.values(people)) p.walker.face = null;
+  for (const v of Object.values(s.people)) if (!v.gone) { const p = people[v.id]; p.walker.dest = { x: p.walker.x, z: p.walker.z }; }
+  if (s.over) { showEnd(); return; }
+  startPlay();
+  await H.fade(false);
 }
 
 // ---------- vote night ----------
