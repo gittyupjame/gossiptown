@@ -22,6 +22,18 @@ for (const k of ["voice", "crowd", "drama", "showOpen", "fanfare", "eliminated"]
   const r = await st((n) => window.__gossiptown.audio.renderMoment(n, 3), k);
   ok(r.rms > 0.005 && r.peak < 1.0, `${k.padEnd(10)} rms ${r.rms.toFixed(3)} peak ${r.peak.toFixed(2)}`);
 }
+// nothing screeches or hisses: the ambience you stand in all day stays soft, crickets and
+// fire at night stay quiet, and no sound clips or goes NaN
+for (const n of ["plaza", "tavern", "river", "night"]) {
+  const r = await st((n) => window.__gossiptown.audio.renderScene(n, 4), n);
+  ok(r.rms < 0.03 && r.peak < 0.3 && !r.bad, `scene ${n.padEnd(7)} rms ${r.rms.toFixed(3)} peak ${r.peak.toFixed(2)} harsh ${r.harsh.toFixed(2)}`);
+}
+const loud = [];
+for (const n of ["laugh", "gasp", "anger", "heart", "sparkle", "sad", "whisper", "suspicious", "cringe", "question", "wave", "handshake", "vote", "crown", "pow", "tea", ...["click", "key", "send", "tip", "toast", "tea", "paper", "pickup", "pin", "creak", "whoosh", "thunk", "tally", "fizzle", "pow", "slap", "tap", "step", "bell", "hour", "handbell", "pause", "unpause", "board"].map((s) => "sfx:" + s)]) {
+  const r = await st((n) => window.__gossiptown.audio.renderMoment(n, 2.5), n);
+  if (r.peak >= 0.6 || r.bad || (r.harsh > 0.6 && r.rms > 0.01)) loud.push(`${n} peak ${r.peak.toFixed(2)} harsh ${r.harsh.toFixed(2)}`);
+}
+ok(!loud.length, `every emote and effect is clean${loud.length ? ": " + loud.join(", ") : ""}`);
 // a new game: title music, then the day
 await page.click("#t-new");
 await page.fill("#name-in", "Rosie");

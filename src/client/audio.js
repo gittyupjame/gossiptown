@@ -512,8 +512,8 @@ function syllable(t, v, f, [f1, f2], vol, muffled) {
   o.connect(b1); o.connect(b2); o.connect(dry);
   const sum = ctx.createGain(); sum.gain.value = 1.6;
   b1.connect(sum); b2.connect(sum); dry.connect(sum);
-  let tail = sum;
-  if (muffled) { const lp = filt(ctx, "lowpass", 900); sum.connect(lp); tail = lp; }
+  const lp = filt(ctx, "lowpass", muffled ? 900 : 3200); sum.connect(lp);
+  const tail = lp;
   tail.connect(g); send(g, A.sfx, 0.06);
   o.start(t); o.stop(t + len + 0.05);
   if (v.breath) { const n = noiseSrc(ctx, t, len), bp = filt(ctx, "bandpass", f2, 2), gn = gainEnv(ctx, t, 0.01, vol * 0.12, len); chain(n, bp, gn); gn.connect(A.sfx); }
@@ -547,9 +547,10 @@ export function sfx(name, opts = {}) {
     case "tap": blip(500, 300, 0.04, 0.2, "square"); break;
     case "step": {
       const surf = opts.surface || "grass", v = (opts.gain ?? 1) * 0.6;
-      if (surf === "stone") { hiss(rnd(2200, 3200), 1.4, 0.035, 0.22 * v, "bandpass"); blip(rnd(150, 190), 90, 0.04, 0.2 * v); }
-      else if (surf === "wood") { blip(rnd(230, 270), 160, 0.07, 0.35 * v, "triangle"); hiss(900, 1, 0.04, 0.08 * v); }
-      else hiss(rnd(1600, 2600), 0.9, 0.07, 0.2 * v, "bandpass");
+      // soft, low footfalls: a hissy step every third of a second reads as static
+      if (surf === "stone") { blip(rnd(150, 180), 80, 0.045, 0.22 * v); hiss(rnd(700, 900), 0.8, 0.03, 0.06 * v, "lowpass"); }
+      else if (surf === "wood") { blip(rnd(230, 270), 160, 0.07, 0.3 * v, "triangle"); hiss(600, 0.8, 0.04, 0.05 * v, "lowpass"); }
+      else { hiss(rnd(450, 650), 0.7, 0.07, 0.12 * v, "lowpass"); blip(rnd(110, 130), 70, 0.05, 0.12 * v); }
       break;
     }
     case "bell": { // the town bell: an inharmonic bronze strike
@@ -581,7 +582,7 @@ export function emote(id, kind, { gain = 1 } = {}) {
   switch (kind) {
     case "laugh": vocal("a", [5, 3, 1, 0], 0.1); break;
     case "gasp": { const n = noiseSrc(ctx, t, 0.25), b = filt(ctx, "bandpass", 1200, 1.5), g = gainEnv(ctx, t, 0.08, 0.2 * gain, 0.15); b.frequency.exponentialRampToValueAtTime(2600, t + 0.22); chain(n, b, g); g.connect(o); vocal("o", [7], 0.1, 0.3); break; }
-    case "anger": { const x = osc(ctx, "sawtooth", mtof(v.pitch - 17), t), tr = osc(ctx, "sine", 24, t), tg = ctx.createGain(), g = gainEnv(ctx, t, 0.03, 0.22 * gain, 0.35), lp = filt(ctx, "lowpass", 700); tg.gain.value = 0.5; tr.connect(tg); tg.connect(g.gain); chain(x, lp, g); g.connect(o); x.start(t); tr.start(t); x.stop(t + 0.45); tr.stop(t + 0.45); break; }
+    case "anger": { const x = osc(ctx, "sawtooth", mtof(v.pitch - 17), t), tr = osc(ctx, "sine", 24, t), tg = ctx.createGain(), g = gainEnv(ctx, t, 0.03, 0.22 * gain, 0.35), lp = filt(ctx, "lowpass", 700); const trem = ctx.createGain(); tg.gain.value = 0.35; trem.gain.value = 0.65; tr.connect(tg); tg.connect(trem.gain); chain(x, lp, trem, g); g.connect(o); x.start(t); tr.start(t); x.stop(t + 0.45); tr.stop(t + 0.45); break; }
     case "heart": INST.glock(ctx, o, t, 76, 0.2, 0.4 * gain); INST.glock(ctx, o, t + 0.1, 81, 0.3, 0.4 * gain); break;
     case "sparkle": case "star": case "gift": case "flower": [84, 88, 91, 96].forEach((m, i) => INST.glock(ctx, o, t + i * 0.05, m - (kind === "star" ? 5 : 0), 0.15, 0.22 * gain)); break;
     case "sad": [76, 72, 69].forEach((m, i) => INST.glock(ctx, o, t + i * 0.16, m, 0.3, 0.3 * gain)); break;
@@ -643,9 +644,9 @@ function bed(type, f, q) {
 }
 function startAmbience() {
   amb.wind = bed("lowpass", 380, 0.5);
-  amb.water = bed("bandpass", 1400, 0.6);
-  amb.river = bed("bandpass", 700, 0.5);
-  amb.murmur = bed("bandpass", 480, 1.2);
+  amb.water = bed("lowpass", 650, 0.4);
+  amb.river = bed("lowpass", 480, 0.4);
+  amb.murmur = bed("lowpass", 420, 0.6);
   amb.fire = bed("lowpass", 220, 0.7);
   amb.lastBird = 0; amb.lastCricket = 0; amb.lastCrackle = 0; amb.lastMurmur = 0;
 }
@@ -661,11 +662,11 @@ export function updateAudio({ x = 0, z = 0, minute = 600, mode = "play", night =
   const p = { x, z };
   const day = !night && h >= 6.5 && h < 19.5, dusk = h >= 17.5 || night;
   set(amb.wind, 0.05 + (night ? 0.04 : 0) + Math.sin(t * 0.13) * 0.02);
-  set(amb.water, mode === "title" ? 0.02 : Math.max(0, 0.16 * (1 - dist(p, SPOTS.fountain) / 18)));
-  set(amb.river, Math.max(0, 0.13 * (1 - riverDist / 16)));
-  set(amb.murmur, (crowdHere ? 0.03 : 0) + Math.max(0, 0.1 * (1 - dist(p, SPOTS.tavern) / 14)) * (h > 11 ? 1 : 0.4));
+  set(amb.water, mode === "title" ? 0.015 : Math.max(0, 0.07 * (1 - dist(p, SPOTS.fountain) / 16)));
+  set(amb.river, Math.max(0, 0.07 * (1 - riverDist / 14)));
+  set(amb.murmur, (crowdHere ? 0.025 : 0) + Math.max(0, 0.06 * (1 - dist(p, SPOTS.tavern) / 14)) * (h > 11 ? 1 : 0.4));
   set(amb.fire, fireLit ? 0.12 : Math.max(0, 0.05 * (1 - dist(p, SPOTS.firepit) / 10)));
-  amb.water.b.frequency.setTargetAtTime(1200 + Math.sin(t * 3.1) * 300, t, 0.1);
+  amb.water.b.frequency.setTargetAtTime(600 + Math.sin(t * 0.7) * 80, t, 0.5);
   // birds by day, crickets by night, the fire crackling
   if (day && mode !== "vote" && t > amb.lastBird) { amb.lastBird = t + rnd(1.2, 4.5); bird(t + 0.02); }
   if (dusk && t > amb.lastCricket) { amb.lastCricket = t + rnd(0.4, 1.1); cricket(t + 0.02, night ? 1 : 0.5); }
@@ -686,9 +687,11 @@ function bird(t) {
 }
 function cricket(t, v) {
   const ctx = A.ctx, pan = ctx.createStereoPanner(); pan.pan.value = rnd(-1, 1); pan.connect(A.amb);
-  const x = osc(ctx, "sine", rnd(4300, 4800), t), am = osc(ctx, "square", 32, t), ag = ctx.createGain(), g = ctx.createGain();
-  ag.gain.value = 0.5; am.connect(ag); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.025 * v, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-  ag.connect(g.gain); chain(x, g); g.connect(pan); x.start(t); am.start(t); x.stop(t + 0.3); am.stop(t + 0.3);
+  // a soft chirp: a sine pulsed on and off by a 0..1 tremolo, inside a quiet envelope
+  const x = osc(ctx, "sine", rnd(3900, 4400), t), am = osc(ctx, "square", 30, t), ag = ctx.createGain(), trem = ctx.createGain(), g = ctx.createGain();
+  ag.gain.value = 0.5; trem.gain.value = 0.5; am.connect(ag); ag.connect(trem.gain);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.012 * v, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  chain(x, trem, g); g.connect(pan); x.start(t); am.start(t); x.stop(t + 0.3); am.stop(t + 0.3);
 }
 function crackle(t, v) {
   const ctx = A.ctx, n = noiseSrc(ctx, t, 0.02), hp = filt(ctx, "highpass", rnd(1500, 4000)), g = gainEnv(ctx, t, 0.001, rnd(0.03, 0.12) * v, 0.015);
@@ -705,9 +708,10 @@ async function renderWith(secs, fn) {
   let buf;
   try { fn(); buf = await off.startRendering(); } finally { Object.assign(A, keep); A.rendering = false; }
   const d = buf.getChannelData(0);
-  let peak = 0, sum = 0;
-  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; sum += d[i] * d[i]; }
-  return { peak, rms: Math.sqrt(sum / d.length) };
+  let peak = 0, sum = 0, hi = 0, bad = 0;
+  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (!Number.isFinite(d[i])) bad++; if (a > peak) peak = a; sum += d[i] * d[i]; if (i) hi += (d[i] - d[i - 1]) ** 2; }
+  // `harsh`: how much of the sound is high, hissy energy (a sine at 1 kHz is about 0.14, white noise about 1.4)
+  return { peak, rms: Math.sqrt(sum / d.length), harsh: Math.sqrt(hi / Math.max(1e-12, sum)), bad };
 }
 export function renderTrack(name, secs = 6) {
   TRACKS ||= makeTracks();
@@ -719,12 +723,27 @@ export function renderTrack(name, secs = 6) {
     }
   });
 }
+// what you'd actually hear standing somewhere: ambience beds plus the critters, for level checks
+const EMO = ["laugh", "gasp", "anger", "heart", "sparkle", "sad", "whisper", "suspicious", "cringe", "question", "wave", "handshake", "vote", "crown", "pow", "tea"];
+export function renderScene(kind, secs = 4) {
+  return renderWith(secs, () => {
+    A.ready = true; A.paused = false;
+    startAmbience();
+    const lv = { plaza: { water: 0.07, wind: 0.05 }, tavern: { murmur: 0.06, wind: 0.05 }, river: { river: 0.07, wind: 0.05 }, night: { wind: 0.09, fire: 0.12 } }[kind] || {};
+    for (const [k, v] of Object.entries(lv)) amb[k].g.gain.value = v;
+    if (kind === "night") for (let s = 0.05; s < secs - 0.4; s += 0.55) { cricket(s, 1); if (Math.random() < 0.5) cricket(s + 0.2, 1); }
+    if (kind === "night") for (let s = 0.05; s < secs - 0.2; s += 0.15) crackle(s, 1);
+    if (kind === "plaza") for (let s = 0.1; s < secs - 0.4; s += 1.4) bird(s);
+  });
+}
 // a voice line, a crowd, or a stinger, for level checks
 export function renderMoment(kind, secs = 3) {
   return renderWith(secs, () => {
     A.ready = true; A.paused = false;
     if (kind === "voice") { const v = VOICES.celeste; for (let i = 0; i < 14; i++) syllable(0.05 + i * v.speed, v, mtof(v.pitch + (i % 5) - 2), VOWEL["aeiou"[i % 5]], 0.42, false); }
     else if (kind === "crowd") crowd({ loved: 4, amused: 2, offended: 2 });
+    else if (EMO.includes(kind)) emote("celeste", kind);
+    else if (kind.startsWith("sfx:")) sfx(kind.slice(4));
     else STINGS[kind]?.(0.05);
   });
 }
