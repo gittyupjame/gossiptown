@@ -910,6 +910,35 @@ function bake() {
   scene.add(merged);
 }
 
+// ---------- the Whisper's notice board ----------
+// Anyone can pin an anonymous note here. The pinned notes are drawn live on top.
+const boardNotes = new THREE.Group();
+function buildBoard() {
+  const g = new THREE.Group(); g.position.set(L.BOARD.x, 0, L.BOARD.z); staticRoot.add(g);
+  for (const sx of [-1, 1]) cyl(g, 0.08, 2.2, "#7a5236", sx * 0.95, 1.1, 0);
+  box(g, 2.2, 1.3, 0.12, "#7a5236", 0, 1.55, 0);
+  box(g, 2.0, 1.1, 0.06, "#d9a86a", 0, 1.55, 0.06);
+  box(g, 2.5, 0.14, 0.4, "#3a8f8a", 0, 2.3, 0.05);
+  // a couple of old notices that never come down
+  box(g, 0.42, 0.5, 0.02, "#fffbe8", -0.6, 1.62, 0.1);
+  box(g, 0.36, 0.3, 0.02, "#e8f6ff", 0.55, 1.35, 0.1);
+  L.OBSTACLES.push({ x: L.BOARD.x - 0.95, z: L.BOARD.z, r: 0.25 }, { x: L.BOARD.x + 0.95, z: L.BOARD.z, r: 0.25 }, { x: L.BOARD.x, z: L.BOARD.z, r: 0.5 });
+  boardNotes.position.copy(g.position);
+  scene.add(boardNotes);
+}
+const NOTE_SPOTS = [[-0.1, 1.75, -0.12], [0.3, 1.8, 0.1], [-0.25, 1.3, 0.06], [0.15, 1.38, -0.08], [0.72, 1.82, 0.14], [-0.75, 1.25, -0.1]];
+export function setBoardNotes(n) {
+  while (boardNotes.children.length > n) boardNotes.remove(boardNotes.children.at(-1));
+  while (boardNotes.children.length < Math.min(n, NOTE_SPOTS.length)) {
+    const [x, y, rz] = NOTE_SPOTS[boardNotes.children.length];
+    const note = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.4, 0.02), toon("#ffd6e6"));
+    note.position.set(x, y, 0.11); note.rotation.z = rz;
+    const pin = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), toon("#e8577e"));
+    pin.position.set(0, 0.15, 0.02); note.add(pin);
+    boardNotes.add(note);
+  }
+}
+
 export function buildTown() {
   buildGround();
   buildWater();
@@ -923,6 +952,7 @@ export function buildTown() {
   buildGate();
   buildBridge();
   buildGarden();
+  buildBoard();
   buildLamps();
   buildNature();
   buildParticles();

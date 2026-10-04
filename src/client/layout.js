@@ -74,6 +74,17 @@ export const PLACE_SPOTS = {
   firepit: { x: -26, z: -37, r: 4.6, inner: 2.6 },
 };
 
+// Things to do: where you pick up a gift, the Whisper's notice board, and the mailboxes.
+export const PICKUPS = {
+  cupcake: { x: -11.6, z: -9.2 },
+  polish: { x: 16.4, z: -9.2 },
+  cider: { x: -12.6, z: 7.0 },
+  flowers: { x: -32.4, z: 17.2 },
+  trinket: { x: 20, z: -3.0 },
+};
+export const BOARD = { x: 6.2, z: -9.0 };
+export const BOARD_STAND = { x: 6.2, z: -7.9 };
+
 export const PLAYER_START = { x: 2, z: 6 };
 export const HOST_SPOT = { x: -26, z: -44.2 };
 
@@ -220,6 +231,16 @@ export function homeDoor(id) {
   if (!c) return { x: 0, z: 26 };
   const off = { s: [0, 1], n: [0, -1], e: [1, 0], w: [-1, 0] }[c.face];
   return { x: c.x + off[0] * (COTTAGE_SIZE.d / 2 + 1.4), z: c.z + off[1] * (COTTAGE_SIZE.d / 2 + 1.4) };
+}
+
+// the mailbox in front of a cottage, and where you stand to open it
+export function mailbox(id) {
+  const c = COTTAGES.find((c) => c.id === id);
+  if (!c) return null;
+  const ry = { s: 0, n: Math.PI, e: Math.PI / 2, w: -Math.PI / 2 }[c.face];
+  const d = c.face === "e" || c.face === "w" ? COTTAGE_SIZE.w : COTTAGE_SIZE.d;
+  const at = (lx, lz) => ({ x: c.x + lx * Math.cos(ry) + lz * Math.sin(ry), z: c.z - lx * Math.sin(ry) + lz * Math.cos(ry) });
+  return { box: at(-2.1, d / 2 + 2.9), stand: at(-2.1, d / 2 + 3.8) };
 }
 
 export function placeAt(x, z) {

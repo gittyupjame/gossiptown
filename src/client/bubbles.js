@@ -108,13 +108,14 @@ export function hushAll() { for (const b of [...speaking.values()]) b.close(); }
 
 // ---------- the bubble you type into ----------
 
-export function typing(id, { name, placeholder = "Say something…", onSubmit, onCancel }) {
+export function typing(id, { name, placeholder = "Say something…", hint = "Enter to say it · empty Enter to say goodbye", onSubmit, onCancel }) {
   speaking.get(id)?.close();
   const el = document.createElement("div");
   el.className = "bubble you typing in";
-  el.innerHTML = `<div class="bwrap"><div class="bname" style="color:#e86f5a"></div><div class="btext"><span class="typed"></span><span class="caret"></span><span class="ph"></span></div><div class="bhint">Enter to say it · empty Enter to say goodbye</div></div>`;
+  el.innerHTML = `<div class="bwrap"><div class="bname" style="color:#e86f5a"></div><div class="btext"><span class="typed"></span><span class="caret"></span><span class="ph"></span></div><div class="bhint"></div></div>`;
   el.querySelector(".bname").textContent = name;
   el.querySelector(".ph").textContent = placeholder;
+  el.querySelector(".bhint").textContent = hint;
   layer.appendChild(el);
   const input = document.getElementById("speech");
   input.value = "";
@@ -142,7 +143,7 @@ export function typing(id, { name, placeholder = "Say something…", onSubmit, o
 
 // ---------- emotes ----------
 
-const EMOTES = { anger: "💢", gasp: "❗", whisper: "🤫", suspicious: "👀", handshake: "🤝", heart: "💖", sad: "💧", vote: "🗳️", crown: "👑", sparkle: "✨", question: "❓", tea: "☕", bell: "🔔", wave: "👋" };
+const EMOTES = { anger: "💢", gasp: "❗", whisper: "🤫", suspicious: "👀", handshake: "🤝", heart: "💖", sad: "💧", vote: "🗳️", crown: "👑", sparkle: "✨", question: "❓", tea: "☕", bell: "🔔", wave: "👋", star: "💫", pow: "💥", gift: "🎁", flower: "🌸" };
 export function emote(id, kind) {
   if (!kind || !EMOTES[kind]) return;
   const el = document.createElement("div");
@@ -151,6 +152,19 @@ export function emote(id, kind) {
   layer.appendChild(el);
   let life = 0;
   const item = { el, id, offset: 0.35, dead: false, update(dt) { life += dt; if (life > 1.9) item.dead = true; } };
+  active.add(item);
+}
+
+// a comic-book word that pops over someone ("POW!")
+export function pop(id, text) {
+  const el = document.createElement("div");
+  el.className = "fx-pop";
+  el.textContent = text;
+  el.style.marginLeft = `${Math.round(Math.random() * 60 - 40)}px`;
+  el.style.marginTop = `${Math.round(Math.random() * 30 - 50)}px`;
+  layer.appendChild(el);
+  let life = 0;
+  const item = { el, id, offset: 0.1, dead: false, update(dt) { life += dt; if (life > 0.75) item.dead = true; } };
   active.add(item);
 }
 

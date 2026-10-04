@@ -26,8 +26,37 @@ Speech appears as bubbles over people's heads. Stand close to a conversation to
 hear every word; from a few steps away you only catch part of it. Cast members
 walk up to you when they have a reason to.
 
-On vote nights, walk up to the woman you want gone at the firepit and press
-Enter twice. When three are left, the women already voted out pick the winner.
+On vote nights, walk up to the woman you want gone at the firepit (or click
+her card) and press Enter twice. When three are left, the women already voted
+out pick the winner.
+
+## Things to do
+
+Everything is something you walk up to and press Enter on.
+
+- **Gifts.** Pick up a cupcake at Marigold's, nail polish at the salon, cider
+  at the Crooked Kettle, wildflowers in the garden or a trinket at the market.
+  Then talk to someone and hand it over ("I brought you this"). Every woman
+  has one thing she adores and one she can't stand, and the schemers wonder
+  what you want for it.
+- **Snooping.** Peek in a woman's mailbox on the lane. The first look can turn
+  up her secret. Anyone nearby may see you, and if she's home she may be
+  watching from the window. Get caught and she comes looking for you.
+- **Anonymous notes.** Pin a note on the Whisper's board at the top of the
+  square. It stays up for two days. Women who pass by read it, decide whether
+  to believe it, and the nosy ones may work out that you wrote it.
+
+## Cat fights
+
+Arguments can turn into hair-pulling cat fights when the grudge, the insult
+or the temper is real. Jev decides when it happens, who comes out on top, and
+whose side everyone watching takes. Fights travel as gossip and count against
+whoever started them at the vote.
+
+A woman can come for you too: if you push her too far in a conversation, or
+she storms over after catching you in her mail or reading your note about
+her. You can also start one ("fight me"). In a fight, mash Enter to hold your
+own or walk away to back down.
 
 ## Brains
 
@@ -56,6 +85,8 @@ Add `?fast` to the URL for 8x game speed with lighter graphics.
     node test/sim-smoke.mjs   # plays several days of the sim without a page
     node test/play.mjs        # headless browser run through talking and the Gossip Board
     node test/vote.mjs        # headless run of a vote night (FINALE=1 for the finale)
+    node test/acts-smoke.mjs  # gifts, snooping, notes and fights without a page
+    node test/acts.mjs        # the same things in a headless browser
 
 ### Layout
 
@@ -65,4 +96,4 @@ Add `?fast` to the URL for 8x game speed with lighter graphics.
 - `src/client`: the 3D town (three.js). `town.js` and `layout.js` build the
   town, `people.js` the characters, `bubbles.js` the speech, `hud.js` the
   HUD, tips and screens, `tracker.js` the Gossip Board, `vote.js` the vote
-  ceremony, `main.js` ties it together.
+  ceremony, `fight.js` the cat fight dust cloud, `main.js` ties it together.

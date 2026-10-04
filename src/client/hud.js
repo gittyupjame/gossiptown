@@ -1,6 +1,6 @@
 // The screen furniture: HUD, hints, headlines, first-time tips, and the cards between days.
 
-import { SHOW } from "../core/cast.js";
+import { SHOW, ITEMS } from "../core/cast.js";
 
 const $ = (id) => document.getElementById(id);
 export { $ };
@@ -19,6 +19,10 @@ export function updateHud(s, placeName) {
   $("hud-vote").textContent = d === 0 ? (m >= 19 * 60 ? "To the firepit!" : "Vote TONIGHT") : `Vote in ${d} day${d > 1 ? "s" : ""}`;
   pill.classList.toggle("tonight", d === 0);
   $("placepill").textContent = placeName;
+  const it = s.player.carrying && ITEMS[s.player.carrying];
+  const cp = $("carrypill");
+  cp.classList.toggle("hidden", !it);
+  if (it && cp.dataset.item !== s.player.carrying) { cp.dataset.item = s.player.carrying; cp.textContent = `${it.icon} Carrying ${it.name}`; }
 }
 
 export function setBrain(jevStatus, voiceStatus) {
@@ -84,7 +88,11 @@ export const TIPS = {
   vote: { icon: "🔥", title: "Cast your vote", text: "Walk up to the woman you want gone (or click her card) and press <kbd>Enter</kbd>, then <kbd>Enter</kbd> again to lock it in. The votes are read out one by one." },
   night: { icon: "🌙", title: "Overnight", text: "Every night each woman lies awake and makes up her mind: grudges, quitting, making peace, who has to go. You hear about the public stuff by morning." },
   tracker: { icon: "📌", title: "Your Gossip Board", text: "<b>The Tea</b>: everything you've heard. <b>My Rumors</b>: what you started and how far it spread. <b>Pacts</b>: who promised you what. <b>The Cast</b>: how each woman feels about you." },
-  fight: { icon: "💢", title: "A fight!", text: "Everyone who saw it will be talking about it. Fights make enemies, and enemies make votes." },
+  fight: { icon: "💢", title: "A cat fight!", text: "Everyone who saw it picks a side, and it'll be all over town by tonight. Whoever starts fights gets remembered at the vote." },
+  "fight-you": { icon: "💥", title: "She's coming for you!", text: "Mash <kbd>Enter</kbd> to hold your own, or walk away to back down. Win and she'll be scared of you. Lose and the whole town hears about it. Either way, whoever started it pays at the vote." },
+  gift: { icon: "🎁", title: "A little something", text: "You're carrying a gift. Talk to someone and hand it over (\"I brought you this\"). Every woman has one thing she adores and one she can't stand. Some will wonder what you want for it." },
+  snoop: { icon: "📬", title: "Snooping", text: "The first peek in a woman's mailbox can turn up her secret. Anyone nearby might see you, and if she's home she might be watching from the window." },
+  note: { icon: "📌", title: "An anonymous note", text: "Your note stays up for two days. Anyone passing the square or the market may read it. Nosy ones (and anyone you've told the same story to) may work out you wrote it." },
 };
 
 const seenKey = "gossiptown.tips.v1";

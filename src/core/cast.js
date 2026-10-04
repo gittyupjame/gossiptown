@@ -176,6 +176,28 @@ const START_REL = [
   ["celeste", "sylvie", -0.5, -0.5, "a sour little thing"],
 ];
 
+// Little things the player can pick up around town and give away. Each woman has one
+// she adores and one she can't stand; Jev decides how a gift actually lands.
+export const ITEMS = {
+  cupcake: { name: "a pink cupcake", icon: "🧁", place: "bakery", where: "Marigold's counter" },
+  flowers: { name: "a bunch of wildflowers", icon: "💐", place: "garden", where: "the garden beds" },
+  cider: { name: "a mug of cider", icon: "🍺", place: "tavern", where: "the Crooked Kettle's tap" },
+  polish: { name: "a bottle of nail polish", icon: "💅", place: "salon", where: "the salon shelf" },
+  trinket: { name: "a shiny trinket", icon: "💎", place: "market", where: "Odette's stall" },
+};
+export const TASTES = {
+  celeste: { loves: "polish", hates: "cider" },
+  odette: { loves: "trinket", hates: "flowers" },
+  wren: { loves: "flowers", hates: "cider" },
+  sylvie: { loves: "trinket", hates: "cupcake" },
+  marigold: { loves: "flowers", hates: "trinket" },
+  pippa: { loves: "cupcake", hates: "polish" },
+  brenna: { loves: "cider", hates: "polish" },
+  juniper: { loves: "trinket", hates: "cupcake" },
+  hesper: { loves: "cupcake", hates: "trinket" },
+  tansy: { loves: "cider", hates: "flowers" },
+};
+
 // Secret pacts at the start of the season. Only members know; the player finds out by listening.
 const START_ALLIANCES = [
   { name: "the Salon Set", members: ["celeste", "tansy"] },
@@ -235,7 +257,11 @@ export function newTown({ playerName = "Rosie" } = {}) {
       promises: [],   // what villagers told the player they would do { by, kind, target, day, sincere }
       seen: {},       // pair -> last outcome seen
       outVotes: [],
+      carrying: null, // an item id from ITEMS
+      fights: 0,      // fights she started
+      snooped: {},    // mailbox owner -> day
     },
+    notes: [],        // anonymous notes on the Whisper board { rid, day, readBy: [] }
     events: [],       // { day, time, place, text, witnesses }
     log: [],          // headline feed for the tracker
     over: null,       // null | { won: bool, reason }

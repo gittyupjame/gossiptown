@@ -238,3 +238,17 @@ body.cinema #hud, body.cinema #hint, body.cinema #chyron { opacity: 0; pointer-e
 #votecards button.on { border-color: var(--pink); transform: translateY(-5px); }
 #votecards button.confirm { background: #ffe1ec; }
 #votecards button.confirm span::after { content: " ✓"; }
+
+#carrypill { background: #fff; padding: 4px 12px; border-radius: 99px; font-size: 14px; font-weight: 600; color: var(--ink); box-shadow: var(--shadow); }
+#carrypill.hidden { display: none; }
+.spot-icon { position: absolute; left: 0; top: 0; font-size: 26px; transform-origin: 50% 100%; margin-left: -14px; margin-top: -30px; pointer-events: none; filter: drop-shadow(0 3px 4px rgba(74,40,70,.3)); transition: opacity .3s; animation: bob 2.2s ease-in-out infinite; }
+.spot-icon.far { opacity: 0; }
+.spot-icon small { font: 700 12px Fredoka, system-ui, sans-serif; background: #fff; color: var(--ink); border-radius: 99px; padding: 1px 6px; vertical-align: middle; margin-left: 2px; }
+@keyframes bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -5px; } }
+.fx-pop { position: absolute; left: 0; top: 0; pointer-events: none; font: 700 26px Fredoka, system-ui, sans-serif; color: #fff; -webkit-text-stroke: 1.5px #4a3040; animation: pop 0.7s ease-out forwards; }
+@keyframes pop { 0% { transform: scale(.3); opacity: 0; } 25% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1) translateY(-18px); opacity: 0; } }
+#fightmeter { position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); width: min(360px, calc(100% - 32px)); height: 18px; border-radius: 99px; background: rgba(255,255,255,.85); box-shadow: var(--shadow); overflow: hidden; display: none; z-index: 7; }
+#fightmeter.show { display: block; }
+#fightmeter i { display: block; height: 100%; width: 50%; background: linear-gradient(90deg, #ff6f9c, #ff9a6a); transition: width .12s; }
+#fightmeter span { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 10px; font: 700 11px Fredoka, system-ui, sans-serif; color: var(--ink); text-transform: uppercase; letter-spacing: .05em; }
+.board-pin { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; background: #fff3d6; }

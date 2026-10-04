@@ -30,6 +30,8 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
     if (!s || s.version !== 2) return null;
     for (const v of sim.alive(s)) v.approaching = false;
     s.player.talkingTo = null;
+    // seasons saved before there was anything to do around town
+    s.notes ??= []; s.player.snooped ??= {}; s.player.fights ??= 0; s.player.carrying ??= null;
     if (s.phase === "day") s.minute = Math.max(8 * 60, Math.min(s.minute, 19 * 60 + 45));
     return s;
   }
@@ -169,9 +171,24 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
     return res;
   }
 
+  // ---------- things to do around town ----------
+
+  const canAct = () => s && s.phase === "day" && !s.over && !s.player.out;
+  function pickUp(item) { if (!canAct()) return null; const it = sim.pickUp(s, item, ui); save(); return it; }
+  async function snoop(owner) { if (!canAct()) return null; const r = await sim.snoop(s, owner, ui); save(); return r; }
+  async function postNote(text) { if (!canAct()) return null; const r = await sim.postNote(s, text.slice(0, 300), ui); save(); return r; }
+  async function fight(id, how) {
+    const v = s.people[id];
+    if (!v || v.gone) return null;
+    s.player.talkingTo = null;
+    const r = await sim.playerFight(s, v, how, ui);
+    save();
+    return r;
+  }
+
   return {
     newSeason, load, save, update, nextDay, startBallots, resolveVote, afterVote, voteSetup,
-    startTalk, endTalk, say, night, setDaySeconds,
+    startTalk, endTalk, say, night, setDaySeconds, pickUp, snoop, postNote, fight,
     state: () => s,
     busy: () => busy,
   };

@@ -3,7 +3,8 @@
 
 import * as THREE from "three";
 import { renderer, camera, setTime, updateSky, resize, env } from "./scene.js";
-import { buildTown, updateTown, setClockHands } from "./town.js";
+import { buildTown, updateTown, setClockHands, setBoardNotes } from "./town.js";
+import { dustCloud } from "./fight.js";
 import { makeCharacter, Walker, portraits, turn, setXray } from "./people.js";
 import * as B from "./bubbles.js";
 import * as H from "./hud.js";
@@ -14,7 +15,7 @@ import { createGame, hasSave } from "../core/game.js";
 import * as sim from "../core/sim.js";
 import * as jev from "../core/jev.js";
 import * as voice from "../core/voice.js";
-import { VILLAGERS, HOST, PLAYER_LOOK, PLACES } from "../core/cast.js";
+import { VILLAGERS, HOST, PLAYER_LOOK, PLACES, ITEMS } from "../core/cast.js";
 
 const $ = H.$;
 const scene = (await import("./scene.js")).scene;
@@ -61,7 +62,7 @@ const pics = portraits([...VILLAGERS, { id: "player", look: PLAYER_LOOK }, { id:
 
 // ---------- state ----------
 
-let mode = "title"; // title | intro | play | vote | night | end
+let mode = "title"; // title | intro | play | fight | vote | night | end
 let paused = false;
 let game = null;
 let talk = null; // { id, bubble, busy }
@@ -211,13 +212,29 @@ const ui = {
   exchange: (e) => playExchange(e),
   headline: (text, kind) => H.chyron(text, kind),
   emote: (id, kind) => { if (people[id] && !people[id].inside) B.emote(id, kind); },
-  fight(a, b) {
-    const pa = people[a].walker, pb = people[b].walker;
-    const dx = pb.x - pa.x, dz = pb.z - pa.z, d = Math.hypot(dx, dz) || 1;
-    for (const [w, s] of [[pa, -1], [pb, 1]]) { const nx = w.x + (dx / d) * s * 0.9, nz = w.z + (dz / d) * s * 0.9; if (!L.solidAt(nx, nz, 0.3)) { w.x = nx; w.z = nz; } }
-    if (Math.hypot(pa.x - me.walker.x, pa.z - me.walker.z) < 15) H.tip("fight");
+  fight(a, b, { winner } = {}) {
+    const pa = people[a], pb = people[b];
+    if (!pa || !pb || pa.inside || pb.inside || pa.gone || pb.gone) return;
+    if (talk && (talk.id === a || talk.id === b)) endTalk(false);
+    // face off, then the dust cloud
+    const dx = pb.walker.x - pa.walker.x, dz = pb.walker.z - pa.walker.z, d = Math.hypot(dx, dz) || 1;
+    if (d > 1.6) { pb.walker.x = pa.walker.x + (dx / d) * 1.1; pb.walker.z = pa.walker.z + (dz / d) * 1.1; }
+    for (const p of [pa, pb]) { p.walker.stop(); p.walker.frozen = true; }
+    const cloud = dustCloud(pa.walker, pb.walker, { ida: a, idb: b });
+    let t = 0;
+    const fn = (dt) => {
+      cloud.update(dt);
+      if ((t += dt) < 3.2) return;
+      frameFns.delete(fn);
+      cloud.stop();
+      for (const p of [pa, pb]) p.walker.frozen = false;
+      if (winner) { B.emote(winner, "sparkle"); B.emote(winner === a ? b : a, "star"); }
+    };
+    frameFns.add(fn);
+    if (Math.hypot(pa.walker.x - me.walker.x, pa.walker.z - me.walker.z) < 18) H.tip("fight");
   },
-  approach: (v, line, purpose) => walkUp(v, line, purpose),
+  gift(id, how) { B.emote(id, { delighted: "heart", pleased: "flower", suspicious: "suspicious", insulted: "anger" }[how]); },
+  approach: (v, line, purpose, conv, opts) => walkUp(v, line, purpose, opts),
   first(kind) {
     const map = { rumor: "rumor", told: "told", alliance: "alliance", "alliance-overheard": "alliance-overheard", "vote-pitch": "vote-pitch", caught: "caught", talk: "talk" };
     if (map[kind]) H.tip(map[kind]);
@@ -242,7 +259,7 @@ function boardBadge(reset = false) {
 
 // ---------- someone walks up to you ----------
 
-async function walkUp(v, line, purpose) {
+async function walkUp(v, line, purpose, { attack = false } = {}) {
   const p = people[v.id];
   if (!p || p.inside || talk || mode !== "play") return;
   const w = p.walker;
@@ -258,6 +275,13 @@ async function walkUp(v, line, purpose) {
   }
   if (talk || mode !== "play" || Math.hypot(w.x - me.walker.x, w.z - me.walker.z) > 3.5) return;
   w.stop();
+  if (attack) {
+    B.say(v.id, line, { name: first(v.id), color: colorOf(v.id), hold: 2.5 });
+    B.emote(v.id, "anger");
+    await wait(1400);
+    if (mode === "play" && !talk) playerBrawl(v.id, v.id);
+    return;
+  }
   H.tip("approach");
   B.emote(v.id, "wave");
   startTalk(v.id, line);
@@ -303,6 +327,11 @@ async function sayLine(text) {
   if (!revealed) think.reveal(res.reply); else think.set(res.reply);
   if (!talk || talk.id !== id) return;
   talk.busy = false;
+  if (res.fight) {
+    await wait(Math.max(1200, res.reply.length * 30));
+    playerBrawl(id, res.fight.by);
+    return;
+  }
   if (res.leaving) {
     await wait(Math.max(1500, res.reply.length * 40));
     endTalk(false);
@@ -329,6 +358,159 @@ function endTalk(sayBye) {
   document.getElementById("speech").blur();
 }
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
+
+// ---------- a cat fight with you ----------
+// Mash Enter to hold your own; walk away to back down. Jev's town decides what it means.
+
+async function playerBrawl(id, by) {
+  if (mode !== "play") return;
+  const s = S();
+  const p = people[id], v = s.people[id];
+  if (!p || p.inside || p.gone) return;
+  if (talk) { talk.bubble?.close(); talk = null; game.endTalk(); }
+  B.hush("player"); B.hush(id);
+  mode = "fight";
+  H.hint("");
+  for (const x of [p, me]) { x.walker.stop(); x.walker.frozen = true; }
+  const dx = p.walker.x - me.walker.x, dz = p.walker.z - me.walker.z, d = Math.hypot(dx, dz) || 1;
+  if (d > 1.4) { p.walker.x = me.walker.x + (dx / d) * 1.1; p.walker.z = me.walker.z + (dz / d) * 1.1; }
+  H.tip("fight-you");
+  H.voteHud(by === "player" ? "You started a cat fight!" : `${first(id)} started a cat fight!`, "Mash Enter to hold your own · walk away to back down");
+  $("fm-her").textContent = first(id);
+  const meter = $("fightmeter"), bar = meter.querySelector("i");
+  meter.classList.add("show");
+  const cloud = dustCloud(me.walker, p.walker, { ida: "player", idb: id });
+  frameFns.add(cloud.update);
+  // how hard she fights back: her nerve and temper, how angry she is, and a bit of luck
+  const her = 1.6 + v.bias.nerve * 1.6 + v.bias.temper * 1.2 + v.mood.anger * 0.3 + Math.random() * 0.8;
+  let power = 0.5, away = 0, result = null;
+  const tap = () => { power = Math.min(1, power + 0.045); };
+  enterFns.add(tap);
+  for (let t = 0; t < 5.0; t += 0.1) {
+    await wait(100);
+    power = Math.max(0, power - her * 0.012);
+    bar.style.width = `${Math.round(power * 100)}%`;
+    const moving = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD"].some((k) => keys.has(k));
+    away = moving ? away + 0.1 : Math.max(0, away - 0.05);
+    if (away >= 0.6) { result = "backed_down"; break; }
+    if (power >= 1) { result = "won"; break; }
+    if (power <= 0) { result = "lost"; break; }
+  }
+  result ??= power >= 0.5 ? "won" : "lost";
+  enterFns.delete(tap);
+  frameFns.delete(cloud.update);
+  cloud.stop();
+  meter.classList.remove("show");
+  H.voteHud(null);
+  for (const x of [p, me]) x.walker.frozen = false;
+  if (result === "backed_down") {
+    const ang = Math.atan2(me.walker.x - p.walker.x, me.walker.z - p.walker.z);
+    const nx = me.walker.x + Math.sin(ang) * 1.2, nz = me.walker.z + Math.cos(ang) * 1.2;
+    if (!L.solidAt(nx, nz, 0.35)) { me.walker.x = nx; me.walker.z = nz; }
+  }
+  B.emote(result === "won" ? "player" : id, "sparkle");
+  B.emote(result === "won" ? id : "player", "star");
+  const gloat = { won: ["Ow! Fine! FINE!", "You'll pay for that.", "My hair!"], lost: ["And stay down, new girl.", "That's what you get.", "Don't EVER cross me."], backed_down: ["That's right, walk away.", "Coward!", "Run along, sweetie."] }[result];
+  B.say(id, pick(gloat), { name: first(id), color: colorOf(id), hold: 2.4 });
+  mode = "play";
+  const r = await game.fight(id, { by, result });
+  if (r) {
+    const parts = [];
+    if (r.sided.you.length) parts.push(`On your side: ${r.sided.you.join(", ")}`);
+    if (r.sided.her.length) parts.push(`On ${first(id)}'s side: ${r.sided.her.join(", ")}`);
+    if (parts.length) setTimeout(() => H.toast(parts.join(" · ")), 2500);
+  }
+}
+
+// ---------- things to do around town ----------
+
+const SPOTS = [
+  ...Object.entries(L.PICKUPS).map(([item, p]) => ({ kind: "pickup", item, x: p.x, z: p.z, r: 1.7, label: { x: p.x, y: 1.5, z: p.z } })),
+  { kind: "board", x: L.BOARD_STAND.x, z: L.BOARD_STAND.z, r: 1.9, label: { x: L.BOARD.x, y: 2.75, z: L.BOARD.z } },
+  ...VILLAGERS.map((v) => { const m = L.mailbox(v.id); return { kind: "mail", owner: v.id, x: m.stand.x, z: m.stand.z, r: 1.4, label: null }; }),
+];
+for (const sp of SPOTS) {
+  if (!sp.label) continue;
+  sp.key = `spot-${sp.kind}-${sp.item || ""}`;
+  const at = new THREE.Vector3(sp.label.x, sp.label.y, sp.label.z);
+  B.setAnchor(sp.key, () => at);
+  sp.tag = B.label(sp.key, sp.kind === "pickup" ? ITEMS[sp.item].icon : "📌", "spot-icon far");
+}
+let acting = false;
+
+function liveNotes(s) { return (s.notes || []).filter((n) => s.day - n.day <= 1); }
+
+function nearestSpot(s) {
+  let best = null, bd = Infinity;
+  for (const sp of SPOTS) {
+    const d = Math.hypot(sp.x - me.walker.x, sp.z - me.walker.z);
+    if (d > sp.r || d >= bd) continue;
+    if (sp.kind === "pickup" && s.player.carrying === sp.item) continue;
+    if (sp.kind === "mail" && s.people[sp.owner]?.gone) continue;
+    best = sp; bd = d;
+  }
+  return best;
+}
+function spotHint(sp, s) {
+  if (sp.kind === "pickup") return `<kbd>Enter</kbd> ${s.player.carrying ? "swap for" : "pick up"} ${ITEMS[sp.item].icon} ${ITEMS[sp.item].name}`;
+  if (sp.kind === "board") return `<kbd>Enter</kbd> pin an anonymous note 📌`;
+  return `<kbd>Enter</kbd> peek in ${first(sp.owner)}'s mailbox 📬`;
+}
+let shownNotes = -1;
+function updateSpots(s) {
+  const n = liveNotes(s).length;
+  if (n !== shownNotes) { shownNotes = n; setBoardNotes(n); }
+  for (const sp of SPOTS) {
+    if (!sp.tag) continue;
+    const d = Math.hypot(sp.label.x - me.walker.x, sp.label.z - me.walker.z);
+    sp.tag.el.classList.toggle("far", d > 13 || (sp.kind === "pickup" && s.player.carrying === sp.item));
+    if (sp.kind === "board") { const n = liveNotes(s).length; const html = n ? `📌<small>${n}</small>` : "📌"; if (sp.tag.el.innerHTML !== html) sp.tag.el.innerHTML = html; }
+  }
+}
+
+async function useSpot(sp) {
+  const s = S();
+  if (acting || !s) return;
+  if (sp.kind === "pickup") {
+    const it = game.pickUp(sp.item);
+    if (!it) return;
+    B.emote("player", "gift");
+    H.toast(`${it.icon} You picked up ${it.name} from ${it.where}`);
+    return;
+  }
+  if (sp.kind === "mail") {
+    acting = true;
+    me.walker.stop();
+    B.say("player", pick(["Just a little peek...", "Nobody's looking...", "Ooh, what's this?"]), { name: s.player.name, color: colorOf("player"), you: true, hold: 1.6 });
+    B.emote("player", "suspicious");
+    let r = null;
+    try { r = await game.snoop(sp.owner); } catch (e) { console.error(e); } finally { acting = false; }
+    if (!r) return;
+    B.say("player", r.isSecret ? `No way! ${r.found}` : r.found, { name: s.player.name, color: colorOf("player"), you: true, hold: r.isSecret ? 6 : 3 });
+    if (r.isSecret) B.emote("player", "gasp");
+    return;
+  }
+  if (sp.kind === "board") {
+    acting = true;
+    let bubble = null;
+    const done = () => { acting = false; bubble?.close(); frameFns.delete(watch); };
+    const watch = () => { if (Math.hypot(sp.x - me.walker.x, sp.z - me.walker.z) > 3.2 || mode !== "play") done(); };
+    frameFns.add(watch);
+    bubble = B.typing("player", {
+      name: s.player.name, placeholder: "Write an anonymous note…", hint: "Enter to pin it · empty Enter to walk away",
+      onSubmit: async (text) => {
+        bubble.lock(true);
+        let r = null;
+        try { r = await game.postNote(text); } catch (e) { console.error(e); } finally { done(); }
+        if (!r) return;
+        B.emote("player", "whisper");
+        setBoardNotes(liveNotes(S()).length);
+        H.toast("📌 Your note is up on the Whisper board. Nobody knows it was you... yet.");
+      },
+      onCancel: done,
+    });
+  }
+}
 
 // ---------- the player walking ----------
 
@@ -426,7 +608,9 @@ function frame(now) {
       B.tagState(v.id, { show: !p.inside && !p.gone && d < 10 && !(talk && talk.id === v.id), near: near === v.id });
     }
     B.tagState(HOST.id, { show: Math.hypot(people[HOST.id].walker.x - me.walker.x, people[HOST.id].walker.z - me.walker.z) < 8 });
-    H.hint(near ? `<kbd>Enter</kbd> talk to ${first(near)}` : "");
+    const spot = near || talk || acting ? null : nearestSpot(s);
+    H.hint(near ? `<kbd>Enter</kbd> talk to ${first(near)}` : spot ? spotHint(spot, s) : "");
+    updateSpots(s);
     H.updateHud(s, placeTitle(s.player.location));
     setClockHands(s.minute);
   } else if (mode !== "vote") { for (const v of VILLAGERS) B.tagState(v.id, { show: false }); B.tagState(HOST.id, { show: false }); if (mode !== "play") H.hint(""); }
@@ -454,7 +638,11 @@ window.addEventListener("keydown", (e) => {
     if (H.isOpen("nightcard")) { $("night-ok").click(); return; }
     if (H.isOpen("endcard")) return;
     if (enterFns.size && !paused) { for (const fn of [...enterFns]) fn(); return; }
-    if (mode === "play" && !talk && !paused) { const id = nearestVillager(2.4); if (id) startTalk(id); }
+    if (mode === "play" && !talk && !paused && !acting) {
+      const id = nearestVillager(2.4);
+      if (id) startTalk(id);
+      else { const sp = nearestSpot(S()); if (sp) useSpot(sp); }
+    }
     return;
   }
   if (e.code === "KeyP" || e.code === "Escape") {
@@ -773,7 +961,7 @@ function showEnd(result) {
   const last = s.votes.at(-1);
   const against = last ? Object.entries(last.ballots).filter(([, t]) => t === "player").map(([x]) => sim.nameOf(s, x)) : [];
   $("end-body").innerHTML = `<div class="end-stats"><div><b>${s.day}</b>days survived</div><div><b>${myRoots.size}</b>rumors started</div><div><b>${reach}</b>women believed you</div><div><b>${s.player.heard.length}</b>pieces of tea</div><div><b>${sim.alliancesOf(s, "player").length}</b>pacts</div><div><b>${betrayals.length}</b>betrayals</div></div>
-    <div class="end-list">${!won && last && !finale && against.length ? `<p><b>Voted you out:</b> ${against.join(", ")}</p>` : ""}${finale ? `<p><b>Jury votes:</b> ${Object.entries(last.ballots).map(([x, t]) => `${sim.nameOf(s, x)} → ${sim.nameOf(s, t)}`).join(" · ")}</p>` : ""}${betrayals.length ? `<p><b>Broke their word to you:</b> ${[...new Set(betrayals.map((b) => sim.nameOf(s, b.by)))].join(", ")}</p>` : ""}</div>`;
+    <div class="end-list">${!won && last && !finale && against.length ? `<p><b>Voted you out:</b> ${against.join(", ")}</p>` : ""}${finale ? `<p><b>Jury votes:</b> ${Object.entries(last.ballots).map(([x, t]) => `${sim.nameOf(s, x)} → ${sim.nameOf(s, t)}`).join(" · ")}</p>` : ""}${s.player.fights ? `<p><b>Cat fights you started:</b> ${s.player.fights}</p>` : ""}${betrayals.length ? `<p><b>Broke their word to you:</b> ${[...new Set(betrayals.map((b) => sim.nameOf(s, b.by)))].join(", ")}</p>` : ""}</div>`;
   H.fade(false);
   H.screen("endcard", true);
 }
