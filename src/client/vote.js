@@ -9,6 +9,7 @@ import * as H from "./hud.js";
 import * as L from "./layout.js";
 import * as voice from "../core/voice.js";
 import * as sim from "../core/sim.js";
+import * as audio from "./audio.js";
 
 const CENTRE = new THREE.Vector3(L.FIREPIT.x, 0, L.FIREPIT.z);
 
@@ -155,21 +156,27 @@ export async function runVote(ctx) {
   const total = Object.values(result.rounds.at(-1).ballots).filter((t) => t === chosen).length;
   if (result.drawn) await hostSay(`Still tied! So the fire decides...`, 2400);
   if (finale) {
+    audio.sting("drumroll", 2.4);
     await hostSay(`With ${total} vote${total === 1 ? "" : "s"}, the Queen of Gossiptown is...`, 2600);
     const cw = ctx.walker(chosen);
     ctx.cam.shot(vec(cw.x, 1.5, cw.z), 4.5, { from: CENTRE });
     await ctx.wait(900);
     B.emote(chosen, "crown");
+    audio.sting(chosen === "player" ? "fanfare" : "good");
+    audio.crowd({ loved: 6 });
     confetti(ctx, cw);
     await sayAndWait(ctx, "primrose", `${chosen === "player" ? s.player.name : first(chosen)}!`, 2600);
     if (chosen !== "player") await sayAndWait(ctx, chosen, pick(["I'd like to thank... me.", "Was there ever any doubt, darlings?", "I did it! Honest, I did it!", "Every rumor was worth it."]).replace(/darlings|Honest, /g, (m) => m), 2600);
   } else {
     const ow = ctx.walker(chosen);
+    audio.sting("drumroll", 2.6);
     await hostSay(`With ${total} vote${total === 1 ? "" : "s"}...`, 2000);
     ctx.cam.shot(vec(ow.x, 1.5, ow.z), 4.4, { from: CENTRE });
     await ctx.wait(900);
+    audio.sting("eliminated");
     await sayAndWait(ctx, "primrose", `${chosen === "player" ? s.player.name : first(chosen)}. The town has spoken.`, 2600);
     snuff(chosen);
+    audio.sfx("fizzle");
     if (chosen !== "player") {
       const v = s.people[chosen];
       const votedBy = Object.entries(result.ballots).filter(([, t]) => t === chosen).map(([x]) => first(x));
@@ -200,6 +207,7 @@ export async function runVote(ctx) {
   function setTally(id, n) {
     if (!tallies[id]) tallies[id] = B.label(id, `<span>0</span>`, "tally", 0.9);
     tallies[id].el.querySelector("span").textContent = n;
+    audio.sfx("tally", { n: Math.min(12, n * 2) });
     tallies[id].el.querySelector("span").style.animation = "none"; void tallies[id].el.offsetWidth; tallies[id].el.querySelector("span").style.animation = "";
   }
   function makeTorch(id, seat) {
@@ -256,6 +264,7 @@ async function flyBallot(ctx, from, to) {
   scene.add(sp);
   const p0 = new THREE.Vector3(a.x, 1.6, a.z), p1 = new THREE.Vector3(b.x, 2.2, b.z);
   ctx.cam.shot(p0.clone().lerp(p1, 0.5).setY(1.4), 7, { from: CENTRE });
+  audio.sfx("whoosh");
   const dur = 900;
   let t = 0;
   await new Promise((resolve) => {
@@ -265,7 +274,7 @@ async function flyBallot(ctx, from, to) {
       sp.position.copy(p0).lerp(p1, u);
       sp.position.y += Math.sin(u * Math.PI) * 2.2;
       sp.material.rotation = u * 6;
-      if (u >= 1) { ctx.stopFrame(tick); scene.remove(sp); resolve(); }
+      if (u >= 1) { ctx.stopFrame(tick); scene.remove(sp); audio.sfx("thunk"); resolve(); }
     };
     ctx.everyFrame(tick);
   });

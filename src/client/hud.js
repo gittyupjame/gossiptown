@@ -2,6 +2,7 @@
 
 import { SHOW, ITEMS, PLACES } from "../core/cast.js";
 import { FORMATS } from "../core/events.js";
+import * as audio from "./audio.js";
 
 const $ = (id) => document.getElementById(id);
 export { $ };
@@ -47,6 +48,7 @@ export function hint(html) {
 
 let toastT = null;
 export function toast(text) {
+  audio.sfx(/^☕/.test(text) ? "tea" : "toast");
   const t = $("toast");
   t.textContent = text;
   t.classList.add("show");
@@ -57,7 +59,7 @@ export function toast(text) {
 // ---------- headlines (lower-third chyron) ----------
 
 const queue = [];
-let showing = false;
+let showing = false, lastDrama = -1e9;
 const TAGS = { drama: "Drama", bad: "Uh oh", vote: "The Vote", good: "Nice", info: "Meanwhile", tea: "Fresh tea", show: "Showtime" };
 export function chyron(text, kind = "drama") {
   queue.push({ text, kind });
@@ -69,6 +71,9 @@ function next() {
   const c = $("chyron");
   if (!item) { showing = false; return; }
   showing = true;
+  // each kind of headline has its own sound
+  if (item.kind === "drama" && performance.now() - lastDrama > 25000) { lastDrama = performance.now(); audio.sting("drama"); } else if (item.kind === "drama") audio.sfx("toast"); else if (item.kind === "bad") audio.sting("bad"); else if (item.kind === "good") audio.sting("good");
+  else if (item.kind === "show") audio.sfx("handbell", { gain: 0.5 }); else audio.sfx("toast");
   c.className = item.kind;
   c.querySelector(".ctag").textContent = TAGS[item.kind] || "Drama";
   c.querySelector(".ctext").textContent = item.text;
@@ -124,6 +129,7 @@ function showNextTip() {
   el.querySelector("p").innerHTML = t.text;
   el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop");
   el.classList.add("show");
+  audio.sfx("tip");
   window.dispatchEvent(new Event("tip-opened"));
 }
 export function dismissTip() {

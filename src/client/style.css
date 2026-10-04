@@ -256,3 +256,4 @@ body.cinema #hud, body.cinema #hint, body.cinema #chyron { opacity: 0; pointer-e
 #showpill.hidden { display: none; }
 #showpill.soon { background: var(--pink); color: #fff; animation: showsoon 1.2s ease-in-out infinite; }
 @keyframes showsoon { 50% { transform: scale(1.06); } }
+#settings .slider { width: 100%; accent-color: var(--pink); margin: 4px 0 6px; }

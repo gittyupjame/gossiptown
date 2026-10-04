@@ -27,6 +27,7 @@
   <div class="hud-right">
     <div id="brain" title=""><i></i><span></span></div>
     <button id="btn-board" class="hbtn">☕ Gossip Board <kbd>Tab</kbd></button>
+    <button id="btn-mute" class="hbtn round" title="Sound on/off (M)">🔊</button>
     <button id="btn-pause" class="hbtn round" title="Pause (P)">❚❚</button>
   </div>
 </div>
@@ -124,12 +125,16 @@
 <div id="settings" class="screen">
   <div class="card center pop">
     <div class="card-kicker">Settings</div>
-    <h2>How Gossiptown thinks</h2>
+    <h2>Settings</h2>
     <div class="set-row"><div><b>Decisions</b><div class="muted" id="set-jev-status"></div></div></div>
     <label class="set-label">Jev API key <span class="muted">(kept only in this browser)</span></label>
     <input id="set-jev-key" type="password" placeholder="apikey_..." autocomplete="off">
     <div class="muted set-note">If this page can't reach Jev, a stand-in that knows each woman's personality makes the decisions instead.</div>
     <div class="set-row"><div><b>Dialogue</b><div class="muted" id="set-voice-status"></div></div></div>
+    <label class="set-label">Music</label>
+    <input id="set-music" class="slider" type="range" min="0" max="1" step="0.05">
+    <label class="set-label">Sound effects and voices</label>
+    <input id="set-sound" class="slider" type="range" min="0" max="1" step="0.05">
     <label class="set-label">Day length</label>
     <div class="seg" id="set-day"><button data-v="180">3 min</button><button data-v="300">5 min</button><button data-v="480">8 min</button></div>
     <div class="title-btns"><button class="big-btn" id="set-ok">Done</button></div>

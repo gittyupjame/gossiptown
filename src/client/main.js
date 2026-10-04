@@ -12,6 +12,7 @@ import * as L from "./layout.js";
 import { initBoard, render as renderBoard } from "./tracker.js";
 import { runVote } from "./vote.js";
 import { runShow } from "./spotlight.js";
+import * as audio from "./audio.js";
 import { FORMATS } from "../core/events.js";
 import { createGame, hasSave } from "../core/game.js";
 import * as sim from "../core/sim.js";
@@ -25,7 +26,7 @@ const scene = (await import("./scene.js")).scene;
 // ---------- settings ----------
 
 const SETTINGS_KEY = "gossiptown.settings.v1";
-const settings = (() => { try { return { daySeconds: 300, jevKey: "", ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") }; } catch { return { daySeconds: 300, jevKey: "" }; } })();
+const settings = (() => { try { return { daySeconds: 300, jevKey: "", music: 0.7, sound: 0.85, muted: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") }; } catch { return { daySeconds: 300, jevKey: "", music: 0.7, sound: 0.85, muted: false }; } })();
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} };
 let serverJev = false;
 
@@ -224,6 +225,7 @@ const ui = {
     if (d > 1.6) { pb.walker.x = pa.walker.x + (dx / d) * 1.1; pb.walker.z = pa.walker.z + (dz / d) * 1.1; }
     for (const p of [pa, pb]) { p.walker.stop(); p.walker.frozen = true; }
     const cloud = dustCloud(pa.walker, pb.walker, { ida: a, idb: b });
+    if (Math.hypot(pa.walker.x - me.walker.x, pa.walker.z - me.walker.z) < 22 || mode === "show") audio.scuffle(3.2);
     let t = 0;
     const fn = (dt) => {
       cloud.update(dt);
@@ -245,6 +247,7 @@ const ui = {
   heard() { H.toast("☕ New tea on your Gossip Board (Tab)"); boardBadge(); },
   clock: () => {},
   bell() {
+    audio.sfx("bell", { strikes: 3 });
     H.chyron("The bell is ringing. Everyone to the firepit at sundown!", "vote");
     B.emote(HOST.id, "bell");
     H.tip("bell");
@@ -395,10 +398,11 @@ async function playerBrawl(id, by) {
   meter.classList.add("show");
   const cloud = dustCloud(me.walker, p.walker, { ida: "player", idb: id });
   frameFns.add(cloud.update);
+  audio.scuffle(5);
   // how hard she fights back: her nerve and temper, how angry she is, and a bit of luck
   const her = 1.6 + v.bias.nerve * 1.6 + v.bias.temper * 1.2 + v.mood.anger * 0.3 + Math.random() * 0.8;
   let power = 0.5, away = 0, result = null;
-  const tap = () => { power = Math.min(1, power + 0.045); };
+  const tap = () => { power = Math.min(1, power + 0.045); audio.sfx("tap"); };
   enterFns.add(tap);
   for (let t = 0; t < 5.0; t += 0.1) {
     await wait(100);
@@ -424,6 +428,7 @@ async function playerBrawl(id, by) {
   }
   B.emote(result === "won" ? "player" : id, "sparkle");
   B.emote(result === "won" ? id : "player", "star");
+  audio.sting(result === "won" ? "good" : "bad");
   const gloat = { won: ["Ow! Fine! FINE!", "You'll pay for that.", "My hair!"], lost: ["And stay down, new girl.", "That's what you get.", "Don't EVER cross me."], backed_down: ["That's right, walk away.", "Coward!", "Run along, sweetie."] }[result];
   B.say(id, pick(gloat), { name: first(id), color: colorOf(id), hold: 2.4 });
   mode = back;
@@ -489,6 +494,7 @@ async function useSpot(sp) {
     const it = game.pickUp(sp.item);
     if (!it) return;
     B.emote("player", "gift");
+    audio.sfx("pickup");
     H.toast(`${it.icon} You picked up ${it.name} from ${it.where}`);
     return;
   }
@@ -497,6 +503,7 @@ async function useSpot(sp) {
     me.walker.stop();
     B.say("player", pick(["Just a little peek...", "Nobody's looking...", "Ooh, what's this?"]), { name: s.player.name, color: colorOf("player"), you: true, hold: 1.6 });
     B.emote("player", "suspicious");
+    audio.sfx("creak");
     let r = null;
     try { r = await game.snoop(sp.owner); } catch (e) { console.error(e); } finally { acting = false; }
     if (!r) return;
@@ -518,6 +525,7 @@ async function useSpot(sp) {
         try { r = await game.postNote(text); } catch (e) { console.error(e); } finally { done(); }
         if (!r) return;
         B.emote("player", "whisper");
+        audio.sfx("pin");
         setBoardNotes(liveNotes(S()).length);
         H.toast("📌 Your note is up on the Whisper board. Nobody knows it was you... yet.");
       },
@@ -628,6 +636,8 @@ function frame(now) {
     H.updateHud(s, placeTitle(s.player.location));
     setClockHands(s.minute);
   } else if (mode !== "vote") { for (const v of VILLAGERS) B.tagState(v.id, { show: false }); B.tagState(HOST.id, { show: false }); if (mode !== "play") H.hint(""); }
+  // music for the moment, footsteps, and the sounds of wherever you are
+  soundFrame(s, rawDt, fz);
   // light and sky
   const minute = forceNight ? 21.5 * 60 : mode === "title" ? 17.8 * 60 : s ? s.minute : 9 * 60;
   setTime(minute, { x: cam.pos.x, z: cam.pos.z - 14 });
@@ -637,6 +647,28 @@ function frame(now) {
   B.frame(dt);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
+}
+let stepAcc = 0, lastStepX = 0, lastStepZ = 0;
+function surfaceAt(x, z) {
+  if (Math.abs(x - L.DOCK.x) < L.DOCK.w / 2 + 0.3 && z < L.DOCK.z + 1 && z > L.DOCK.z - L.DOCK.len) return "wood";
+  if (Math.abs(x - L.BRIDGE.x) < L.BRIDGE.len / 2 && Math.abs(z - L.BRIDGE.z) < L.BRIDGE.w / 2 + 0.3) return "wood";
+  if (Math.hypot(x - L.PLAZA.x, z - L.PLAZA.z) < L.PLAZA.r) return "stone";
+  for (const r of L.ROADS) if (L.distToPolyline(x, z, r.pts) < r.w / 2) return "stone";
+  return "grass";
+}
+function soundFrame(s, dt, fz) {
+  const won = s?.over?.won;
+  const evening = s && (s.minute >= 17 * 60 || (sim.isVoteDay(s) && s.minute >= 19 * 60));
+  const track = mode === "title" || mode === "intro" ? "title" : mode === "fight" ? "fight" : mode === "show" ? "show" : mode === "vote" || mode === "vote-pick" ? "vote" : mode === "night" ? "night" : mode === "end" ? (won ? "title" : "night") : evening ? "evening" : "day";
+  audio.music(track, { afternoon: !!s && s.minute >= 13 * 60 });
+  if (fz) return;
+  // your footsteps, by what you're walking on
+  const w = me.walker, moved = Math.hypot(w.x - lastStepX, w.z - lastStepZ);
+  lastStepX = w.x; lastStepZ = w.z;
+  if (moved < 1 && (mode === "play" || mode === "vote-pick" || mode === "show")) { stepAcc += moved; if (stepAcc > 1.05) { stepAcc = 0; audio.sfx("step", { surface: surfaceAt(w.x, w.z), gain: 0.8 }); } }
+  const lx = mode === "play" || mode === "vote-pick" ? w.x : cam.look.x, lz = mode === "play" || mode === "vote-pick" ? w.z : cam.look.z;
+  const crowdHere = s ? sim.alive(s).filter((v) => { const p = people[v.id]; return !p.inside && Math.hypot(p.walker.x - lx, p.walker.z - lz) < 9; }).length : 0;
+  audio.updateAudio({ x: lx, z: lz, minute: forceNight ? 21.5 * 60 : mode === "title" ? 17.8 * 60 : s ? s.minute : 600, mode, night: env.night, fireLit: mode === "vote" || mode === "vote-pick", riverDist: L.distToPolyline(lx, lz, L.RIVER) - L.RIVER_W / 2, crowdHere: crowdHere >= 3 ? crowdHere : 0 });
 }
 const placeTitle = (loc) => (PLACES[loc] ? PLACES[loc].name.replace(/^the /, "The ") : "The lanes");
 
@@ -659,6 +691,7 @@ window.addEventListener("keydown", (e) => {
     }
     return;
   }
+  if (e.code === "KeyM" && !e.target.closest?.("input")) { setMuted(audio.toggleMute()); return; }
   if (e.code === "KeyP" || e.code === "Escape") {
     if (e.code === "Escape" && H.isOpen("board")) { toggleBoard(false); return; }
     if (e.code === "Escape" && H.isOpen("settings")) { closeSettings(); return; }
@@ -668,13 +701,28 @@ window.addEventListener("keydown", (e) => {
   keys.add(e.code);
 });
 window.addEventListener("keyup", (e) => keys.delete(e.code));
+// browsers only allow sound after the first click or key press
+const wake = () => audio.initAudio({ music: settings.music, sfx: settings.sound, muted: settings.muted });
+window.addEventListener("pointerdown", wake, true);
+window.addEventListener("keydown", wake, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("button")) audio.sfx("click"); }, true);
+function setMuted(on) {
+  settings.muted = on; saveSettings();
+  audio.setVolumes({ muted: on });
+  $("btn-mute").textContent = on ? "🔇" : "🔊";
+}
+$("btn-mute").onclick = () => setMuted(!settings.muted);
+$("btn-mute").textContent = settings.muted ? "🔇" : "🔊";
 window.addEventListener("blur", () => keys.clear());
 document.addEventListener("visibilitychange", () => { if (document.hidden && mode !== "title" && mode !== "end") setPaused(true); });
 window.addEventListener("toggle-tracker", () => toggleBoard());
 window.addEventListener("tip-closed", () => { if (talk?.bubble) talk.bubble.focus(); });
 
 function setPaused(on) {
+  if (on && !paused) audio.sfx("pause");
   paused = on;
+  audio.setPaused(on);
+  if (!on) setTimeout(() => audio.sfx("unpause"), 30);
   H.screen("pause", on);
   $("btn-pause").textContent = on ? "▶" : "❚❚";
   if (on) keys.clear();
@@ -688,6 +736,7 @@ $("p-settings").onclick = () => openSettings();
 function toggleBoard(force) {
   if (!S() || mode === "title" || mode === "intro") return;
   const on = force ?? !H.isOpen("board");
+  if (on !== H.isOpen("board")) audio.sfx("board");
   H.screen("board", on);
   if (on) { renderBoard(); boardBadge(true); H.tip("tracker"); keys.clear(); }
   else if (talk?.bubble) talk.bubble.focus();
@@ -707,6 +756,7 @@ function openSettings() {
   const vs = voice.voiceStatus();
   $("set-voice-status").textContent = vs.label === "Phrasebook" ? "A built-in phrasebook (Claude isn't reachable from this page)" : `${vs.label}`;
   for (const b of document.querySelectorAll("#set-day button")) b.classList.toggle("on", +b.dataset.v === settings.daySeconds);
+  $("set-music").value = settings.music; $("set-sound").value = settings.sound;
   H.screen("settings", true);
 }
 function closeSettings() {
@@ -716,6 +766,8 @@ function closeSettings() {
 }
 for (const b of document.querySelectorAll("#set-day button")) b.onclick = () => { settings.daySeconds = +b.dataset.v; saveSettings(); for (const x of document.querySelectorAll("#set-day button")) x.classList.toggle("on", x === b); if (game) game.setDaySeconds?.(settings.daySeconds); };
 $("set-ok").onclick = closeSettings;
+$("set-music").oninput = (e) => { settings.music = +e.target.value; saveSettings(); audio.setVolumes({ music: settings.music }); };
+$("set-sound").oninput = (e) => { settings.sound = +e.target.value; saveSettings(); audio.setVolumes({ sfx: settings.sound }); audio.sfx("tip"); };
 $("t-settings").onclick = openSettings;
 
 // ---------- title, intro, days ----------
@@ -977,6 +1029,7 @@ function showNight(s, lines) {
   $("night-ok").innerHTML = `Start Day ${s.day + 1} <kbd>Enter</kbd>`;
   H.fade(false);
   H.screen("nightcard", true);
+  audio.sting("nightfall");
   H.tip("night");
 }
 $("night-ok").onclick = async () => {
@@ -990,6 +1043,7 @@ $("night-ok").onclick = async () => {
   me.walker.x = d.x; me.walker.z = d.z; me.walker.heading = Math.PI / 2 * -1;
   const host = people[HOST.id].walker; host.x = -37; host.z = -2.4; host.stop();
   startPlay();
+  audio.sting("morning");
   await H.fade(false);
   H.chyron(`Day ${s.day}. ${sim.isVoteDay(s) ? "Tonight is a vote!" : `${sim.daysToVote(s)} day${sim.daysToVote(s) > 1 ? "s" : ""} until the next vote.`}`, sim.isVoteDay(s) ? "vote" : "info");
 };
@@ -1012,6 +1066,7 @@ function showEnd(result) {
     <div class="end-list">${!won && last && !finale && against.length ? `<p><b>Voted you out:</b> ${against.join(", ")}</p>` : ""}${finale ? `<p><b>Jury votes:</b> ${Object.entries(last.ballots).map(([x, t]) => `${sim.nameOf(s, x)} → ${sim.nameOf(s, t)}`).join(" · ")}</p>` : ""}${s.player.fights ? `<p><b>Cat fights you started:</b> ${s.player.fights}</p>` : ""}${betrayals.length ? `<p><b>Broke their word to you:</b> ${[...new Set(betrayals.map((b) => sim.nameOf(s, b.by)))].join(", ")}</p>` : ""}</div>`;
   H.fade(false);
   H.screen("endcard", true);
+  audio.sting(won ? "fanfare" : "sad");
 }
 
 // ---------- go ----------
@@ -1021,4 +1076,4 @@ voice.initVoice().then(() => H.setBrain(jev.status(), voice.voiceStatus()));
 toTitle();
 cam.pos.set(30, 20, 30);
 requestAnimationFrame(frame);
-window.__gossiptown = { renderer, get game() { return game; }, people, ui, cam, setPaused, get mode() { return mode; }, startVote, jev, voice };
+window.__gossiptown = { renderer, get game() { return game; }, people, ui, cam, setPaused, get mode() { return mode; }, startVote, jev, voice, audio };

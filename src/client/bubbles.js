@@ -3,6 +3,7 @@
 
 import * as THREE from "three";
 import { camera } from "./scene.js";
+import * as audio from "./audio.js";
 
 const layer = document.getElementById("labels");
 const anchors = new Map(); // id -> () => Vector3 (top of head)
@@ -11,6 +12,14 @@ let viewW = window.innerWidth, viewH = window.innerHeight;
 window.addEventListener("resize", () => { viewW = window.innerWidth; viewH = window.innerHeight; });
 
 export function setAnchor(id, fn) { anchors.set(id, fn); }
+
+// How loud someone is: near the camera is full volume, across town is a murmur.
+function loudness(id) {
+  const fn = anchors.get(id);
+  if (!fn) return 0.6;
+  const d = fn().distanceTo(camera.position);
+  return Math.max(0.12, Math.min(1, 1.3 - d / 28));
+}
 
 function project(p) {
   v3.copy(p).project(camera);
@@ -61,7 +70,7 @@ export function say(id, text, { name = "", color = "#ff8fb8", muffled = false, h
   el.querySelector(".bname").textContent = name;
   layer.appendChild(el);
   const tEl = el.querySelector(".btext");
-  let shown = 0, full = text || "", life = 0, closing = false;
+  let shown = 0, full = text || "", life = 0, closing = false, voiced = 0;
   const speed = 42; // characters per second
   const item = {
     el, id, offset: 0.55, clamp: true, dead: false,
@@ -70,6 +79,12 @@ export function say(id, text, { name = "", color = "#ff8fb8", muffled = false, h
       if (shown < full.length) {
         shown = Math.min(full.length, shown + dt * speed);
         tEl.textContent = full.slice(0, Math.ceil(shown));
+        // she babbles along as her words appear (a syllable every few letters)
+        if (full !== "…" && voiced < 48 * 3.2) while (shown - voiced >= 3.2) {
+          voiced += 3.2;
+          const ch = full[Math.floor(voiced)] || "a";
+          audio.speakTick(id, /[a-z]/i.test(ch) ? ch : "a", { gain: (you ? 0.6 : 1) * loudness(id), muffled, ask: /\?\s*$/.test(full), end: shown >= full.length - 3 });
+        }
       }
       const need = hold ?? Math.max(2.6, 1.4 + full.length / 15);
       if (!closing && shown >= full.length && full !== "…" && life > full.length / speed + need) item.close();
@@ -125,7 +140,8 @@ export function typing(id, { name, placeholder = "Say something…", hint = "Ent
   input.oninput = sync;
   input.onkeydown = (e) => {
     if (e.key.startsWith("Arrow")) { e.preventDefault(); return; } // arrows still walk while you type
-    if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); const v = input.value.trim(); input.value = ""; sync(); v ? onSubmit(v) : onCancel?.(); }
+    if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); const v = input.value.trim(); input.value = ""; sync(); audio.sfx(v ? "send" : "click"); v ? onSubmit(v) : onCancel?.(); }
+    else if (e.key.length === 1 || e.key === "Backspace") audio.sfx("key");
     else if (e.key === "Escape") { e.preventDefault(); onCancel?.(); }
     else if (e.key === "Tab") { e.preventDefault(); window.dispatchEvent(new CustomEvent("toggle-tracker")); }
     e.stopPropagation();
@@ -144,8 +160,9 @@ export function typing(id, { name, placeholder = "Say something…", hint = "Ent
 // ---------- emotes ----------
 
 const EMOTES = { anger: "💢", gasp: "❗", whisper: "🤫", suspicious: "👀", handshake: "🤝", heart: "💖", sad: "💧", vote: "🗳️", crown: "👑", sparkle: "✨", question: "❓", tea: "☕", bell: "🔔", wave: "👋", star: "💫", pow: "💥", gift: "🎁", flower: "🌸", laugh: "😂", cringe: "😬" };
-export function emote(id, kind) {
+export function emote(id, kind, { silent = false } = {}) {
   if (!kind || !EMOTES[kind]) return;
+  if (!silent) audio.emote(id, kind, { gain: loudness(id) });
   const el = document.createElement("div");
   el.className = "emote";
   el.textContent = EMOTES[kind];
@@ -157,6 +174,7 @@ export function emote(id, kind) {
 
 // a comic-book word that pops over someone ("POW!")
 export function pop(id, text) {
+  audio.sfx(/SLAP|THWAP|BAP/.test(text) ? "slap" : "pow", { gain: 0.5 * loudness(id) });
   const el = document.createElement("div");
   el.className = "fx-pop";
   el.textContent = text;

@@ -9,6 +9,7 @@ import * as L from "./layout.js";
 import * as voice from "../core/voice.js";
 import * as sim from "../core/sim.js";
 import * as E from "../core/events.js";
+import * as audio from "./audio.js";
 import { PLACES } from "../core/cast.js";
 import { scene, toon, outlineMat } from "./scene.js";
 
@@ -53,6 +54,8 @@ export async function runShow(ctx) {
   const lineup = await lineupP;
   await ctx.wait(300);
   await H.fade(false);
+  audio.sting("showOpen");
+  setTimeout(() => audio.crowd({ loved: 5 }), 900);
   H.voteHud(`${f.icon} ${f.title}`, `${place.replace(/^the /, "The ")} · Day ${s.day}`);
   H.tip("show");
   await ctx.wait(1400);
@@ -68,7 +71,8 @@ export async function runShow(ctx) {
     const res = await E.crowdReacts(s, act, ctx.ui, { line });
     wide();
     await ctx.wait(350);
-    for (const [id, k] of Object.entries(res.reactions)) if (FACE[k]) setTimeout(() => B.emote(id, FACE[k]), Math.random() * 500);
+    audio.crowd(res.tally);
+    for (const [id, k] of Object.entries(res.reactions)) if (FACE[k]) setTimeout(() => B.emote(id, FACE[k], { silent: true }), Math.random() * 500);
     if (act.by === "player") showTally(res.tally);
     await ctx.wait(1700);
     if (res.snap && !fought) {
@@ -197,6 +201,7 @@ export async function runShow(ctx) {
     }
   }
 
+  audio.crowd({ loved: 4 });
   await hostSay(pick(["That's the show, ladies! Try not to kill each other before sundown.", "And that's a wrap! Oh, the town is going to be BUZZING.", "Thank you, thank you. Same time tomorrow, my little vipers."]), 2400);
   prop.remove();
   await H.fade(true);

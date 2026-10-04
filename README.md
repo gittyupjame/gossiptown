@@ -86,6 +86,16 @@ plans to vote for, and sometimes it turns into a cat fight on the spot. It all
 goes into their memories, so it comes up again in conversations and at the
 vote.
 
+## Sound
+
+Everything you hear is synthesized live in the browser with Web Audio (no sound files):
+
+- Music for each part of the day (morning, evening, night), plus themes for the title screen, Primrose's show, the vote and cat fights, crossfading as things change.
+- Stingers for big moments: gossip breaking, the show opening, the drumroll and elimination at the vote, the season finale.
+- Every woman babbles in her own voice as her speech bubble types out, quieter the farther away she is.
+- Crowd gasps, laughs and boos at the shows, footsteps that change with the ground, and town ambience (wind, the river, birds, crickets, the firepit, the clock tower).
+- `M` mutes, Settings has music and sound sliders, and pausing silences everything.
+
 ## Brains
 
 - **Decisions (Jev).** Paste your Jev key in Settings on the title screen. The
@@ -114,9 +124,10 @@ Add `?fast` to the URL for 8x game speed with lighter graphics.
     node test/play.mjs        # headless browser run through talking and the Gossip Board
     node test/vote.mjs        # headless run of a vote night (FINALE=1 for the finale)
     node test/acts-smoke.mjs  # gifts, snooping, notes and fights without a page
-    node test/acts.mjs
+    node test/acts.mjs        # the same things in a headless browser
     node test/show-smoke.mjs  # every show format through the core (offline stand-in)
-    FORMAT=roast node test/show.mjs   # headless run of one show        # the same things in a headless browser
+    FORMAT=roast node test/show.mjs   # headless run of one show
+    node test/audio.mjs       # music and sound levels, pause and mute
 
 ### Layout
 
@@ -126,4 +137,4 @@ Add `?fast` to the URL for 8x game speed with lighter graphics.
 - `src/client`: the 3D town (three.js). `town.js` and `layout.js` build the
   town, `people.js` the characters, `bubbles.js` the speech, `hud.js` the
   HUD, tips and screens, `tracker.js` the Gossip Board, `vote.js` the vote
-  ceremony, `fight.js` the cat fight dust cloud, `spotlight.js` Primrose's show, `main.js` ties it together.
+  ceremony, `fight.js` the cat fight dust cloud, `spotlight.js` Primrose's show, `audio.js` all music and sound, `main.js` ties it together.
