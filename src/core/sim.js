@@ -14,7 +14,9 @@
 
 import * as jev from "./jev.js";
 import * as voice from "./voice.js";
-import { PLACES, SHOW, ITEMS, TASTES } from "./cast.js";
+import { PLACES, SHOW, ITEMS, TASTES, FASHION } from "./cast.js";
+import { opinionText, lookText } from "./looks.js";
+import { outfitKey } from "./wardrobe.js";
 
 // ---------- small helpers ----------
 
@@ -114,6 +116,7 @@ export function persona(s, v) {
   return {
     who: `${v.name}, the ${v.employed ? v.job : `out-of-work ${v.job}`} (${v.archetype})`,
     personality: v.traits.join(", "),
+    ...(FASHION[v.id] ? { taste_in_clothes: FASHION[v.id].text } : {}),
     nature: nature(v),
     mood: moodText(v.mood),
     where: placeName(v.location),
@@ -130,7 +133,8 @@ export function persona(s, v) {
 export function feelings(s, a, b) {
   const id = b === "player" ? "player" : b.id;
   const r = s.rel[a.id][id];
-  return `${first(a)} ${feel(r.affinity)} ${nameOf(s, id)} and ${trust(r.trust)} her (${r.note})`;
+  const look = id === "player" ? opinionText(s, a.id) : null;
+  return `${first(a)} ${feel(r.affinity)} ${nameOf(s, id)} and ${trust(r.trust)} her (${r.note})${look ? `; ${look}` : ""}`;
 }
 
 const candidatesFor = (s, v) => [...alive(s).filter((o) => o.id !== v.id).map((o) => o.id), ...(s.player.out ? [] : ["player"])];
@@ -566,7 +570,16 @@ const PURPOSES = (s, v) => ({
   recruit: `Walks up to ${s.player.name} to propose teaming up for the vote`,
   lobby: `Walks up to ${s.player.name} to push her to vote someone out`,
   fish: `Walks up to ${s.player.name} to pump her for information`,
+  outfit: `Walks up to ${s.player.name} to tell her what she thinks of her outfit`,
 });
+
+// how keen she is to say something about the newcomer's outfit (stand-in prior)
+function lookTalk(s, v) {
+  const lk = s.looks?.[v.id];
+  if (!lk || lk.said || !s.player.outfit || lk.key !== outfitKey(s.player.outfit)) return 0;
+  const strong = Math.abs(lk.verdict - 2) >= 1 || ["envious", "copycat", "suspicious"].includes(lk.reaction);
+  return strong ? 0.6 + (FASHION[v.id]?.vain || 0.3) * 2.5 : 0;
+}
 
 async function approaches(s, ui) {
   if (s.player.talkingTo || s.player.out || (s.cooldown || 0) > s.minute + s.day * 1440) return;
@@ -594,7 +607,7 @@ async function approaches(s, ui) {
       const juicy = Object.entries(v.knows).filter(([id, k]) => k.conf >= 0.5 && s.rumors[id].about !== v.id && s.rumors[id].about !== "player");
       const j = await jev.ask({ ...persona(s, v), on_newcomer: feelings(s, v, "player"), newcomer_distance: `${Math.round(ui.distance(v))} steps away` }, {
         purpose: { type: "choice", instructions: `${first(v)} is near ${s.player.name}, the newcomer. Does she walk up to her, and why? Only approach with a real reason.`, criteria: PURPOSES(s, v),
-          prior: { none: 14, spill: juicy.length ? v.bias.gossip * (1 + Math.max(0, r.affinity)) : 0, recruit: v.bias.scheme * Math.max(0.1, r.affinity + 1) * (alliancesOf(s, v.id).some((a) => a.members.includes("player")) ? 0.1 : 0.6), lobby: v.votePlan ? v.bias.scheme * 1.2 * (daysToVote(s) <= 1 ? 2 : 0.6) : 0, fish: v.bias.nosy * 0.8 } },
+          prior: { none: 14, spill: juicy.length ? v.bias.gossip * (1 + Math.max(0, r.affinity)) : 0, recruit: v.bias.scheme * Math.max(0.1, r.affinity + 1) * (alliancesOf(s, v.id).some((a) => a.members.includes("player")) ? 0.1 : 0.6), lobby: v.votePlan ? v.bias.scheme * 1.2 * (daysToVote(s) <= 1 ? 2 : 0.6) : 0, fish: v.bias.nosy * 0.8, outfit: lookTalk(s, v) } },
       }, `approach:${v.id}`);
       return [v, j.purpose.pick, juicy];
     }));
@@ -609,12 +622,18 @@ async function approaches(s, ui) {
     } else if (purpose === "recruit") purpose = "propose teaming up for the vote, a secret alliance";
     else if (purpose === "lobby" && chosen.votePlan) { voteTarget = chosen.votePlan.target; purpose = `get her to vote out ${nameOf(s, voteTarget)}`; detail = chosen.votePlan.why; }
     else if (purpose === "fish") purpose = "fish for gossip and find out who she is voting for";
+    else if (purpose === "outfit" && s.looks?.[chosen.id]) {
+      const lk = s.looks[chosen.id];
+      lk.said = true;
+      purpose = lk.verdict >= 2.6 ? (lk.reaction === "envious" ? `pay her a sweet compliment on her ${lk.item} that is secretly a dig` : `gush over her ${lk.item}`) : lk.reaction === "copycat" ? "call her out for copying your look" : lk.reaction === "suspicious" ? `ask, a little too sweetly, how she afforded her ${lk.item}` : `make a snide remark about her ${lk.item}`;
+      detail = `you think her look is ${opinionText(s, chosen.id).replace(/^thinks her look is /, "")}`;
+    }
     else return;
   }
   s.cooldown = s.minute + s.day * 1440 + 90; // at most one walk-up every hour and a half
   chosen.approaching = true;
   const r = s.rel[chosen.id].player;
-  const line = await voice.opener({ v: chosen, playerName: s.player.name, purpose, detail, opinion: `${feel(r.affinity)}, ${trust(r.trust)}` });
+  const line = await voice.opener({ v: chosen, playerName: s.player.name, purpose, detail, opinion: `${feel(r.affinity)}, ${trust(r.trust)}${s.looks?.[v.id] ? `; ${opinionText(s, v.id)}` : ""}` });
   chosen.approaching = false;
   if (s.player.talkingTo || s.paused || s.phase !== "day" || s.over) return;
   const conv = (s.player.convo = { with: chosen.id, lines: [`${first(chosen)}: ${line}`], opener: { purpose, rid, voteTarget } });
@@ -665,7 +684,8 @@ export async function playerSays(s, v, line, ui, onText) {
   const myAlliance = alliancesOf(s, v.id).find((a) => a.members.includes("player"));
   const state = {
     listener: persona(s, v),
-    listener_on_newcomer: `${feel(r.affinity)} ${s.player.name} and ${trust(r.trust)} her. Heard about her: ${aboutPlayer.join(" | ") || "nothing"}${myAlliance ? `. They have a secret pact${myAlliance.sincere[v.id] ? "" : " (she is only pretending)"}` : ""}`,
+    newcomer_look: s.player.outfit ? lookText(s) : undefined,
+    listener_on_newcomer: `${feel(r.affinity)} ${s.player.name} and ${trust(r.trust)} her${s.looks?.[v.id] ? `; ${opinionText(s, v.id)}` : ""}. Heard about her: ${aboutPlayer.join(" | ") || "nothing"}${myAlliance ? `. They have a secret pact${myAlliance.sincere[v.id] ? "" : " (she is only pretending)"}` : ""}`,
     listener_feelings: alive(s).filter((o) => o.id !== v.id).map((o) => feelings(s, v, o)),
     conversation: conv.lines.slice(-6),
     newcomer_says: line,
@@ -807,7 +827,7 @@ export async function playerSays(s, v, line, ui, onText) {
     v, playerName: s.player.name, history: conv.lines, line, stance: stanceText, react,
     plan: act === "end_conversation" ? "end this conversation now" : kind && act !== "nothing" ? planText(s, v.intent) + (leaving ? ", and you leave right now to do it" : ", later") : null,
     otherPlan: !kind && v.intent ? planText(s, v.intent) : null,
-    opinion: `${feel(r.affinity)}, ${trust(r.trust)}`, mood: moodText(v.mood),
+    opinion: `${feel(r.affinity)}, ${trust(r.trust)}${s.looks?.[v.id] ? `; ${opinionText(s, v.id)}` : ""}`, mood: moodText(v.mood),
   }, onText);
   conv.lines.push(`${s.player.name}: ${line}`, `${first(v)}: ${replyText}`);
   remember(v, s, `I said to ${s.player.name}: ${replyText}`);
@@ -969,9 +989,9 @@ export async function castVotes(s, candidates, voters, { finale = false } = {}) 
       const r = s.rel[v.id][id];
       const ally = alliancesOf(s, v.id).find((a) => a.members.includes(id));
       const said = Object.entries(v.knows).filter(([rid, k]) => s.rumors[rid].about === id && k.conf >= 0.4).map(([rid]) => s.rumors[rid].text).slice(-2);
-      criteria[id] = `${finale ? "Crown" : "Vote out"} ${nameOf(s, id)}: ${first(v)} ${feel(r.affinity)} her and ${trust(r.trust)} her${ally ? `; they have a secret pact${ally.sincere[v.id] ? "" : " she never meant"}` : ""}${said.length ? `; she has heard: ${said.join(" / ")}` : ""}${!finale ? `; how well liked she is in town: ${popularity(s, id).toFixed(1)} of 3` : ""}${brawls(s, id) ? `; she has started ${brawls(s, id)} cat fight${brawls(s, id) > 1 ? "s" : ""}` : ""}`;
+      criteria[id] = `${finale ? "Crown" : "Vote out"} ${nameOf(s, id)}: ${first(v)} ${feel(r.affinity)} her and ${trust(r.trust)} her${ally ? `; they have a secret pact${ally.sincere[v.id] ? "" : " she never meant"}` : ""}${said.length ? `; she has heard: ${said.join(" / ")}` : ""}${!finale ? `; how well liked she is in town: ${popularity(s, id).toFixed(1)} of 3` : ""}${id === "player" && s.looks?.[v.id] ? `; ${first(v)} ${opinionText(s, v.id)}` : ""}${brawls(s, id) ? `; she has started ${brawls(s, id)} cat fight${brawls(s, id) > 1 ? "s" : ""}` : ""}`;
       if (finale) prior[id] = Math.max(0.05, 1.5 + r.affinity + r.trust * 0.5);
-      else prior[id] = Math.max(0.05, 0.6 + Math.max(0, -r.affinity) * 1.6 + Math.max(0, -r.trust) * 0.6 - (ally ? (ally.sincere[v.id] ? 2.5 * v.bias.loyalty : 0) : 0) + (v.votePlan?.target === id ? 3 + v.bias.loyalty : 0) + Math.max(0, popularity(s, id)) * v.bias.scheme * 1.2 + brawls(s, id) * 0.35);
+      else prior[id] = Math.max(0.05, 0.6 + Math.max(0, -r.affinity) * 1.6 + Math.max(0, -r.trust) * 0.6 - (ally ? (ally.sincere[v.id] ? 2.5 * v.bias.loyalty : 0) : 0) + (v.votePlan?.target === id ? 3 + v.bias.loyalty : 0) + Math.max(0, popularity(s, id)) * v.bias.scheme * 1.2 + brawls(s, id) * 0.35 + (id === "player" && s.looks?.[v.id]?.threat ? 1 + v.bias.scheme : 0));
     }
     const promised = s.player.promises.filter((p) => p.by === v.id && p.kind === "vote" && candidates.includes(p.target)).map((p) => `told ${s.player.name} she would vote out ${nameOf(s, p.target)}${p.sincere ? "" : " (a lie)"}`);
     const j = await jev.ask({ ...persona(s, v), promises_made: promised, ballot: finale ? "the finale: as a voted-out woman on the jury, she picks who wins the season" : "tonight's vote: she secretly names one woman to send home" }, {

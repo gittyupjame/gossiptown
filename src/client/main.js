@@ -13,6 +13,9 @@ import { initBoard, render as renderBoard } from "./tracker.js";
 import { runVote } from "./vote.js";
 import { runShow } from "./spotlight.js";
 import * as audio from "./audio.js";
+import { openWardrobe, isOpen as wardrobeOpen } from "./closet.js";
+import * as W from "../core/wardrobe.js";
+import { remark as lookRemark } from "../core/looks.js";
 import { FORMATS } from "../core/events.js";
 import { createGame, hasSave } from "../core/game.js";
 import * as sim from "../core/sim.js";
@@ -59,9 +62,21 @@ function addPerson(id, look, opts, x, z) {
 for (const v of VILLAGERS) { addPerson(v.id, v.look, { idle: v.idle, speed: v.speed }, 0, 0); B.tag(v.id, v.name.split(" ")[0]); }
 addPerson(HOST.id, HOST.look, { idle: "chatter" }, -36, -3);
 B.tag(HOST.id, "Primrose");
-const me = addPerson("player", PLAYER_LOOK, { idle: "none" }, L.PLAYER_START.x, L.PLAYER_START.z);
+const me = addPerson("player", W.lookOf(W.STARTER), { idle: "none" }, L.PLAYER_START.x, L.PLAYER_START.z);
 me.walker.speedBase = 3.2;
-const pics = portraits([...VILLAGERS, { id: "player", look: PLAYER_LOOK }, { id: HOST.id, look: HOST.look }]);
+const pics = portraits([...VILLAGERS, { id: "player", look: W.lookOf(W.STARTER) }, { id: HOST.id, look: HOST.look }]);
+
+// Swap the player's figure for one in her new outfit (and refresh her portrait).
+function setPlayerLook(outfit) {
+  const look = W.lookOf(outfit);
+  const old = me.model;
+  const model = makeCharacter(look, { idle: "none" });
+  model.root.position.copy(old.root.position); model.root.rotation.copy(old.root.rotation);
+  scene.add(model.root); scene.remove(old.root);
+  me.model = model; me.walker.model = model;
+  B.setAnchor("player", () => model.root.position.clone().setY(model.height + 0.12));
+  Object.assign(pics, portraits([{ id: "player", look }]));
+}
 
 // ---------- state ----------
 
@@ -80,7 +95,7 @@ if (FAST > 1) { renderer.shadowMap.enabled = false; renderer.setPixelRatio(1); }
 
 const S = () => game?.state();
 const first = (id) => (id === "player" ? S()?.player.name : id === HOST.id ? "Primrose" : S()?.people[id]?.name.split(" ")[0] || id);
-const frozen = () => paused || H.tipShowing() || H.isOpen("board") || H.isOpen("settings");
+const frozen = () => paused || H.tipShowing() || H.isOpen("board") || H.isOpen("settings") || wardrobeOpen();
 
 function wait(ms) { return new Promise((resolve) => timers.add({ left: ms, resolve })); }
 function waitOrEnter(ms) {
@@ -238,6 +253,7 @@ const ui = {
     frameFns.add(fn);
     if (Math.hypot(pa.walker.x - me.walker.x, pa.walker.z - me.walker.z) < 18) H.tip("fight");
   },
+  lookJudged(v, rec) { lookMoment(v, rec); },
   gift(id, how) { B.emote(id, { delighted: "heart", pleased: "flower", suspicious: "suspicious", insulted: "anger" }[how]); },
   approach: (v, line, purpose, conv, opts) => walkUp(v, line, purpose, opts),
   first(kind) {
@@ -446,6 +462,7 @@ async function playerBrawl(id, by) {
 const SPOTS = [
   ...Object.entries(L.PICKUPS).map(([item, p]) => ({ kind: "pickup", item, x: p.x, z: p.z, r: 1.7, label: { x: p.x, y: 1.5, z: p.z } })),
   { kind: "board", x: L.BOARD_STAND.x, z: L.BOARD_STAND.z, r: 1.9, label: { x: L.BOARD.x, y: 2.75, z: L.BOARD.z } },
+  { kind: "rack", x: L.RACK_STAND.x, z: L.RACK_STAND.z, r: 1.8, label: { x: L.RACK.x, y: 2.4, z: L.RACK.z } },
   ...VILLAGERS.map((v) => { const m = L.mailbox(v.id); return { kind: "mail", owner: v.id, x: m.stand.x, z: m.stand.z, r: 1.4, label: null }; }),
 ];
 for (const sp of SPOTS) {
@@ -453,7 +470,7 @@ for (const sp of SPOTS) {
   sp.key = `spot-${sp.kind}-${sp.item || ""}`;
   const at = new THREE.Vector3(sp.label.x, sp.label.y, sp.label.z);
   B.setAnchor(sp.key, () => at);
-  sp.tag = B.label(sp.key, sp.kind === "pickup" ? ITEMS[sp.item].icon : "📌", "spot-icon far");
+  sp.tag = B.label(sp.key, sp.kind === "pickup" ? ITEMS[sp.item].icon : sp.kind === "rack" ? "👗" : "📌", "spot-icon far");
 }
 let acting = false;
 
@@ -473,6 +490,7 @@ function nearestSpot(s) {
 function spotHint(sp, s) {
   if (sp.kind === "pickup") return `<kbd>Enter</kbd> ${s.player.carrying ? "swap for" : "pick up"} ${ITEMS[sp.item].icon} ${ITEMS[sp.item].name}`;
   if (sp.kind === "board") return `<kbd>Enter</kbd> pin an anonymous note 📌`;
+  if (sp.kind === "rack") return `<kbd>Enter</kbd> change your look 👗 <small>(🪙 ${s.player.coins})</small>`;
   return `<kbd>Enter</kbd> peek in ${first(sp.owner)}'s mailbox 📬`;
 }
 let shownNotes = -1;
@@ -496,6 +514,23 @@ async function useSpot(sp) {
     B.emote("player", "gift");
     audio.sfx("pickup");
     H.toast(`${it.icon} You picked up ${it.name} from ${it.where}`);
+    return;
+  }
+  if (sp.kind === "rack") {
+    acting = true;
+    me.walker.stop();
+    try {
+      const o = await openWardrobe({ outfit: s.player.outfit, owned: s.player.owned, coins: s.player.coins, playerName: s.player.name });
+      if (o && o.changed) {
+        const r = game.dress(o);
+        if (r.ok) {
+          setPlayerLook(S().player.outfit);
+          B.emote("player", "sparkle");
+          audio.sfx("pickup");
+          H.toast(`👗 New look${r.spent ? ` for 🪙 ${r.spent}` : ""}. Everyone who sees you will have an opinion.`);
+        }
+      }
+    } finally { acting = false; }
     return;
   }
   if (sp.kind === "mail") {
@@ -675,7 +710,7 @@ const placeTitle = (loc) => (PLACES[loc] ? PLACES[loc].name.replace(/^the /, "Th
 // ---------- input ----------
 
 window.addEventListener("keydown", (e) => {
-  if (e.target.id === "name-in" || e.target.id === "set-jev-key") return;
+  if (e.target.id === "name-in" || e.target.id === "set-jev-key" || wardrobeOpen()) return;
   if (e.code === "Tab") { e.preventDefault(); toggleBoard(); return; }
   if (e.key === "Enter") {
     e.preventDefault();
@@ -796,21 +831,70 @@ $("t-new").onclick = () => {
   setTimeout(() => $("name-in").focus(), 50);
 };
 $("name-in").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("name-ok").click(); } e.stopPropagation(); });
-$("name-ok").onclick = () => {
+$("name-ok").onclick = async () => {
   const name = ($("name-in").value.trim() || "Rosie").replace(/[^\p{L}\p{N} '-]/gu, "").slice(0, 16) || "Rosie";
   H.screen("namecard", false);
+  const outfit = await openWardrobe({ outfit: W.STARTER, owned: [], coins: W.BUDGET, creation: true, playerName: name });
   H.resetTips();
   newGameObject();
-  game.newSeason(name);
+  game.newSeason(name, outfit);
+  setPlayerLook(S().player.outfit);
   intro();
 };
 $("t-continue").onclick = () => {
   newGameObject();
   if (!game.load()) { toTitle(); return; }
+  setPlayerLook(S().player.outfit);
   H.screen("title", false);
   resume();
 };
 $("end-new").onclick = () => { try { localStorage.removeItem("gossiptown.season.v2"); } catch {} H.screen("endcard", false); toTitle(); };
+
+// ---------- how you look ----------
+
+let introLooks = false, lastLookLine = 0;
+// a woman just sized up your outfit: show it if you can see her
+function lookMoment(v, rec) {
+  if (introLooks || mode !== "play" || talk?.id === v.id) return;
+  const p = people[v.id];
+  if (!p || p.inside) return;
+  H.tip("looks");
+  const now = performance.now();
+  if (now - lastLookLine < 7000 || rec.reaction === "shrugs") return;
+  lastLookLine = now;
+  const behind = ["sneers", "envious", "copycat", "suspicious"].includes(rec.reaction);
+  B.say(v.id, lookRemark(S(), v, rec), { name: first(v.id), color: colorOf(v.id), muffled: behind, hold: 2.4 });
+}
+
+// The welcome party gets its first good look at you.
+async function firstImpressions(hostSay) {
+  const s = S();
+  cam.shot(new THREE.Vector3(me.walker.x, 1.2, me.walker.z), 4.2, { from: new THREE.Vector3(0, 0, 0), height: 0.9 });
+  const spin = { t: 0 };
+  const fn = (dt) => { spin.t += dt; me.walker.heading = Math.PI + Math.sin(Math.min(1, spin.t / 1.6) * Math.PI * 2) * 0.9 * (1 - Math.min(1, spin.t / 1.6)); if (spin.t > 1.7) { me.walker.heading = Math.PI; frameFns.delete(fn); } };
+  frameFns.add(fn);
+  await hostSay(`But first, ladies, take a good long look at our newcomer!`, 2600);
+  introLooks = true;
+  let recs = [];
+  try { recs = await game.firstLooks({ where: "the welcome party in the plaza: the newcomer's very first appearance" }); } catch (e) { console.error(e); }
+  cam.shot(new THREE.Vector3(0, 0.8, -3.2), 9.5, { from: new THREE.Vector3(0, 0, 14), height: 8.5 });
+  await wait(1100);
+  const EM = { admires: "heart", approves: "sparkle", sneers: "cringe", envious: "anger", copycat: "anger", suspicious: "suspicious" };
+  for (const v of sim.alive(s)) { const r = s.looks[v.id]; if (r && EM[r.reaction]) { B.emote(v.id, EM[r.reaction]); await wait(90); } }
+  await wait(700);
+  const weight = (r) => Math.abs(r.verdict - 2) + (["envious", "copycat", "suspicious", "admires"].includes(r.reaction) ? 1 : 0) + Math.random() * 0.5;
+  const loud = sim.alive(s).map((v) => [v, s.looks[v.id]]).filter(([, r]) => r && r.reaction !== "shrugs").sort((a, b) => weight(b[1]) - weight(a[1])).slice(0, 3);
+  for (const [v, r] of loud) {
+    const behind = ["sneers", "envious", "copycat", "suspicious"].includes(r.reaction);
+    const b = B.say(v.id, lookRemark(s, v, r), { name: first(v.id), color: colorOf(v.id), muffled: behind, hold: 999 });
+    await waitOrEnter(2300);
+    b.close();
+    await wait(150);
+  }
+  introLooks = false;
+  const avg = recs.reduce((t, r) => t + r.verdict, 0) / Math.max(1, recs.length);
+  await hostSay(avg >= 2.8 ? `Ooh, they're impressed. Careful, sweetie, nobody likes the prettiest girl in the room for long.` : avg <= 1.6 ? `Yikes. Tough crowd! Maybe pay a visit to the clothes rack by the salon.` : `Mixed reviews! Some love it, some are already whispering. How thrilling.`);
+}
 
 async function intro() {
   mode = "intro";
@@ -852,6 +936,7 @@ async function intro() {
     H.lowerThird(null);
     await wait(250);
   }
+  await firstImpressions(hostSay);
   cam.shot(new THREE.Vector3(-1.6, 1.4, 4.2), 5, { from: new THREE.Vector3(0, 0, 14), height: 1.4 });
   await hostSay(`Day one starts now. Good luck, ${s.player.name}. You'll need it!`, 3000);
   H.skip(false);
@@ -1076,4 +1161,4 @@ voice.initVoice().then(() => H.setBrain(jev.status(), voice.voiceStatus()));
 toTitle();
 cam.pos.set(30, 20, 30);
 requestAnimationFrame(frame);
-window.__gossiptown = { renderer, get game() { return game; }, people, ui, cam, setPaused, get mode() { return mode; }, startVote, jev, voice, audio };
+window.__gossiptown = { renderer, get game() { return game; }, people, ui, cam, setPaused, get mode() { return mode; }, startVote, jev, voice, audio, me };

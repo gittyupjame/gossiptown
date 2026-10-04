@@ -142,8 +142,8 @@ function hair(p, style, c, accent) {
   }
 }
 
-function headAccessory(p, look) {
-  const a = look.accessory;
+function headAccessory(p, look, a = look.accessory) {
+  if (!a) return;
   if (a === "sunglasses") { for (const s of [-1, 1]) p.add(S.sph, "#2a2a3a", { x: s * 0.11, y: 0.36, z: 0.12, sx: 0.09, sy: 0.06, sz: 0.04, rx: -0.9, outline: false }); p.add(S.box, "#2a2a3a", { y: 0.37, z: 0.14, sx: 0.08, sy: 0.02, sz: 0.02, rx: -0.9, outline: false }); }
   if (a === "earrings") for (const s of [-1, 1]) { p.add(S.sph, look.accent, { x: s * 0.33, y: -0.14, z: 0.02, sx: 0.04, sy: 0.04, sz: 0.04, outline: false }); p.add(S.sph, look.accent, { x: s * 0.33, y: -0.21, z: 0.02, sx: 0.03, sy: 0.05, sz: 0.03, outline: false }); }
   if (a === "glasses" || a === "roundglasses") {
@@ -156,7 +156,107 @@ function headAccessory(p, look) {
     for (const s of [-1, 1]) p.add(S.cyl, "#c98a4a", { x: s * 0.1, y: 0.25, z: 0.26, sx: 0.07, sy: 0.06, sz: 0.07, rx: Math.PI / 2 - 0.45 });
     for (const s of [-1, 1]) p.add(S.sph, "#bfe8ff", { x: s * 0.1, y: 0.265, z: 0.29, sx: 0.06, sy: 0.06, sz: 0.02, rx: -0.45, outline: false });
   }
+  if (a === "cateye") {
+    for (const s of [-1, 1]) p.add(S.torus, "#2a1e2a", { x: s * 0.12, y: -0.01, z: 0.33, sx: 0.08, sy: 0.06, sz: 0.08, rz: s * -0.35, outline: false });
+    for (const s of [-1, 1]) p.add(S.box, "#2a1e2a", { x: s * 0.2, y: 0.03, z: 0.31, sx: 0.04, sy: 0.02, sz: 0.02, rz: s * 0.5, outline: false });
+    p.add(S.box, "#2a1e2a", { y: 0.0, z: 0.34, sx: 0.07, sy: 0.012, sz: 0.012, outline: false });
+  }
+  if (a === "hoops") for (const s of [-1, 1]) p.add(S.torus, "#e8c36a", { x: s * 0.34, y: -0.2, z: 0.02, sx: 0.06, sy: 0.06, sz: 0.06, ry: Math.PI / 2, outline: false });
+  if (a === "studs") for (const s of [-1, 1]) p.add(S.sph, "#fffaf0", { x: s * 0.34, y: -0.12, z: 0.03, sx: 0.035, sy: 0.035, sz: 0.035, outline: false });
+  if (a === "chandelier") for (const s of [-1, 1]) for (let i = 0; i < 3; i++) p.add(S.sph, i === 2 ? "#cfefff" : "#e8c36a", { x: s * 0.34, y: -0.13 - i * 0.06, z: 0.03, sx: 0.03 + i * 0.01, sy: 0.03 + i * 0.012, sz: 0.03, outline: false, basic: i === 2 });
+  if (a === "bow") {
+    for (const s of [-1, 1]) p.add(S.sph, look.accent, { x: s * 0.13, y: 0.36, z: -0.1, sx: 0.13, sy: 0.08, sz: 0.05, rz: s * 0.3 });
+    p.add(S.sph, look.accent, { y: 0.36, z: -0.09, sx: 0.05, sy: 0.05, sz: 0.05 });
+  }
+  if (a === "sunhat") {
+    p.add(S.cyl, "#ecd28c", { y: 0.27, z: -0.02, sx: 0.62, sy: 0.025, sz: 0.62, rx: -0.12 });
+    p.add(S.cap, "#ecd28c", { y: 0.26, z: -0.03, sx: 0.33, sy: 0.3, sz: 0.33, rx: -0.12 });
+    p.add(S.cyl, look.accent === "#ffffff" ? look.outfit : look.accent, { y: 0.31, z: -0.03, sx: 0.335, sy: 0.05, sz: 0.335, rx: -0.12, outline: false });
+  }
+  if (a === "beret") p.add(S.sph, look.outfit === "#2a2430" ? "#d8283c" : "#2a2430", { x: 0.06, y: 0.33, z: -0.03, sx: 0.34, sy: 0.1, sz: 0.32, rz: -0.25, rx: -0.15 });
+  if (a === "fascinator") {
+    p.add(S.cyl, look.outfit, { x: 0.2, y: 0.3, z: 0.02, sx: 0.12, sy: 0.02, sz: 0.12, rz: -0.6 });
+    for (let i = 0; i < 3; i++) p.add(S.capsule, "#ffffff", { x: 0.25 + i * 0.03, y: 0.42 + i * 0.02, z: -0.04 - i * 0.03, sx: 0.015, sy: 0.12, sz: 0.03, rz: -0.6 - i * 0.2, outline: false });
+  }
+  if (a === "tiara") for (let i = 0; i < 5; i++) { const ang = Math.PI * (0.3 + i * 0.1), big = i === 2; p.add(S.cone, "#f2d36a", { x: Math.cos(ang) * 0.27, y: 0.33 + (big ? 0.04 : 0), z: Math.sin(ang) * 0.13 + 0.02, sx: 0.12, sy: big ? 0.2 : 0.13, sz: 0.12, outline: false }); if (big) p.add(S.sph, "#ff6fa0", { x: 0, y: 0.4, z: 0.16, sx: 0.035, sy: 0.035, sz: 0.035, outline: false, basic: true }); }
   if (a === "flowercrown") for (let i = 0; i < 9; i++) { const ang = Math.PI * (0.05 + (i / 8) * 0.9); p.add(S.sph, i % 2 ? look.accent : "#ffffff", { x: Math.cos(ang) * 0.32, y: 0.22 + Math.sin(ang) * 0.04, z: Math.sin(ang) * 0.12 - 0.02, sx: 0.055, sy: 0.055, sz: 0.055, outline: false }); }
+}
+
+// ---------- outfits (the player's wardrobe) ----------
+
+const shade = (c, k) => new THREE.Color(c).multiplyScalar(k).getStyle();
+// Draws the torso and skirt for an outfit shape; returns the sleeve color.
+function dressBody(bp, look) {
+  const c = look.outfit, d = look.dress || "frock";
+  const shoulders = (col) => bp.add(S.sph, col, { y: 0.86, sx: 0.19, sy: 0.1, sz: 0.17 });
+  const straps = (col) => { for (const s of [-1, 1]) bp.add(S.box, col, { x: s * 0.09, y: 0.9, z: 0.02, sx: 0.025, sy: 0.12, sz: 0.16, outline: false }); };
+  switch (d) {
+    case "sundress":
+      bp.add(S.cone, c, { y: 0.6 }); shoulders(look.skin); straps(c);
+      for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; bp.add(S.box, "#ffffff", { x: Math.sin(a) * 0.3, y: 0.42, z: Math.cos(a) * 0.3, sx: 0.06, sy: 0.06, sz: 0.06, ry: a, outline: false }); }
+      return look.skin;
+    case "peasant":
+      bp.add(S.cone, c, { y: 0.6 }); shoulders("#fff6e0");
+      for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; bp.add(S.sph, i % 2 ? "#d8283c" : "#ffd76a", { x: Math.sin(a) * 0.33, y: 0.36, z: Math.cos(a) * 0.33, sx: 0.025, sy: 0.025, sz: 0.025, outline: false }); }
+      return "#fff6e0";
+    case "tea":
+      bp.add(S.cone, c, { y: 0.6 }); shoulders(c);
+      for (let i = 0; i < 16; i++) { const a = (i * 2.4) % (Math.PI * 2), y = 0.4 + (i % 4) * 0.11, r = 0.33 - (y - 0.32) * 0.3; bp.add(S.sph, c === "#ffffff" ? "#ff8fb8" : "#ffffff", { x: Math.sin(a) * r, y, z: Math.cos(a) * r, sx: 0.025, sy: 0.025, sz: 0.012, ry: a, outline: false, basic: true }); }
+      bp.add(S.torus, "#ffffff", { y: 0.92, sx: 0.08, sy: 0.08, sz: 0.08, rx: Math.PI / 2, outline: false });
+      return c;
+    case "suit": {
+      const j = shade(c, 0.8);
+      bp.add(S.cone, c, { y: 0.56, sx: 0.85, sz: 0.85, sy: 0.85 });
+      bp.add(S.cyl, j, { y: 0.72, sx: 0.2, sy: 0.32, sz: 0.18 });
+      shoulders(j);
+      for (const s of [-1, 1]) bp.add(S.box, "#fff6e0", { x: s * 0.05, y: 0.8, z: 0.17, sx: 0.05, sy: 0.14, sz: 0.02, rz: s * 0.4, outline: false });
+      for (const y of [0.7, 0.62]) bp.add(S.sph, "#e8c36a", { y, z: 0.19, sx: 0.018, sy: 0.018, sz: 0.012, outline: false });
+      return j;
+    }
+    case "overalls": {
+      const denim = "#4a6fa8";
+      bp.add(S.cone, denim, { y: 0.56, sx: 0.85, sy: 0.7, sz: 0.85 });
+      shoulders(c);
+      bp.add(S.box, denim, { y: 0.72, z: 0.13, sx: 0.2, sy: 0.18, sz: 0.06 });
+      straps(denim);
+      for (const s of [-1, 1]) bp.add(S.sph, "#e8c36a", { x: s * 0.08, y: 0.79, z: 0.17, sx: 0.018, sy: 0.018, sz: 0.012, outline: false });
+      return c;
+    }
+    case "leather": {
+      const jk = "#2a2228";
+      bp.add(S.cone, c, { y: 0.5, sx: 0.9, sy: 0.5, sz: 0.9 });
+      bp.add(S.cyl, jk, { y: 0.74, sx: 0.2, sy: 0.3, sz: 0.18 });
+      shoulders(jk);
+      bp.add(S.box, c, { y: 0.76, z: 0.16, sx: 0.08, sy: 0.22, sz: 0.02, outline: false });
+      bp.add(S.box, "#c0c0c8", { x: 0.06, y: 0.72, z: 0.18, sx: 0.012, sy: 0.24, sz: 0.01, outline: false });
+      return jk;
+    }
+    case "slip":
+      bp.add(S.cone, c, { y: 0.56, sx: 0.8, sy: 0.95, sz: 0.8 }); shoulders(look.skin); straps(c);
+      return look.skin;
+    case "sequin":
+      bp.add(S.cone, c, { y: 0.6, sx: 0.92, sz: 0.92 }); shoulders(look.skin); straps(c);
+      for (let i = 0; i < 40; i++) { const a = (i * 2.39996) % (Math.PI * 2), y = 0.36 + (i / 40) * 0.5, r = (0.34 - (y - 0.32) * 0.3) * 0.93; bp.add(S.sph, i % 3 ? "#fff3b0" : "#ffffff", { x: Math.sin(a) * r, y, z: Math.cos(a) * r, sx: 0.016, sy: 0.016, sz: 0.016, outline: false, basic: true }); }
+      return look.skin;
+    case "gown":
+      bp.add(S.cone, c, { y: 0.45, sx: 1.3, sy: 1.6, sz: 1.3 });
+      bp.add(S.sph, c, { y: 0.86, sx: 0.19, sy: 0.1, sz: 0.17 });
+      for (const s of [-1, 1]) bp.add(S.sph, shade(c, 1.15), { x: s * 0.2, y: 0.85, sx: 0.08, sy: 0.07, sz: 0.08 });
+      bp.add(S.torus, shade(c, 0.75), { y: 0.66, sx: 0.2, sy: 0.2, sz: 0.2, rx: Math.PI / 2, outline: false });
+      return look.skin;
+    default:
+      bp.add(S.cone, c, { y: 0.6 }); shoulders(c);
+      return c;
+  }
+}
+
+function makeBag(look) {
+  const b = new Part();
+  if (look.bag === "basket") { b.add(S.cyl, "#c89a5a", { y: -0.08, sx: 0.09, sy: 0.08, sz: 0.07 }); b.add(S.torus, "#a87a3a", { y: 0.0, sx: 0.07, sy: 0.08, sz: 0.07, outline: false }); }
+  if (look.bag === "tote") { b.add(S.box, "#efe2c4", { y: -0.12, z: 0.0, sx: 0.04, sy: 0.18, sz: 0.16 }); b.add(S.torus, "#efe2c4", { y: 0.0, sx: 0.06, sy: 0.07, sz: 0.06, ry: Math.PI / 2, outline: false }); }
+  if (look.bag === "clutch") b.add(S.box, "#e8c36a", { y: 0.0, z: 0.05, sx: 0.05, sy: 0.08, sz: 0.15, rx: 0.2 });
+  if (look.bag === "handbag") { const col = look.outfit === "#2a2430" ? "#c94a7a" : "#2a2228"; b.add(S.box, col, { y: -0.1, sx: 0.07, sy: 0.12, sz: 0.17 }); b.add(S.torus, "#e8c36a", { y: -0.03, sx: 0.06, sy: 0.06, sz: 0.06, ry: Math.PI / 2, outline: false }); b.add(S.sph, "#e8c36a", { x: 0.04, y: -0.08, sx: 0.015, sy: 0.015, sz: 0.015, outline: false }); }
+  const g = b.build(); g.position.set(0.03, -0.3, 0.02); return g;
 }
 
 // ---------- the figure ----------
@@ -173,23 +273,30 @@ export function makeCharacter(look, { idle = "none", speed = 1 } = {}) {
     const pivot = new THREE.Group(); pivot.position.set(s * 0.085, 0.36, 0); rig.add(pivot);
     const p = new Part();
     p.add(S.capsule, look.skin, { y: -0.15, sx: 0.065, sy: 0.16, sz: 0.065 });
-    p.add(S.sph, shoe(look), { y: -0.31, z: 0.03, sx: 0.085, sy: 0.07, sz: 0.11 });
+    p.add(S.sph, shoe(look), { y: -0.31, z: 0.03, sx: look.shoe === "clogs" ? 0.1 : 0.085, sy: 0.07, sz: look.shoe === "clogs" ? 0.13 : 0.11 });
+    if (look.shoe === "boots") p.add(S.capsule, shoe(look), { y: -0.2, sx: 0.075, sy: 0.08, sz: 0.075 });
+    if (look.shoe === "heels") p.add(S.cyl, shoe(look), { y: -0.36, z: -0.05, sx: 0.022, sy: 0.08, sz: 0.022, outline: false });
+    if (look.shoe === "sneakers") p.add(S.box, "#e86f9a", { y: -0.35, z: 0.03, sx: 0.15, sy: 0.025, sz: 0.2, outline: false });
     pivot.add(p.build());
     legs.push(pivot);
   }
   // body
   const body = new THREE.Group(); body.position.y = 0.0; rig.add(body);
   const bp = new Part();
-  bp.add(S.cone, look.outfit, { y: 0.6 });
-  bp.add(S.sph, look.outfit, { y: 0.86, sx: 0.19, sy: 0.1, sz: 0.17 });
+  const sleeve = dressBody(bp, look);
   bp.add(S.cyl, look.skin, { y: 0.93, sx: 0.06, sy: 0.08, sz: 0.06, outline: false });
-  bp.add(S.torus, look.accent, { y: 0.33, sx: 0.335, sy: 0.335, sz: 0.335, rx: Math.PI / 2, outline: false });
-  const acc = look.accessory;
+  if (!look.dress || ["frock", "tea", "peasant", "sundress"].includes(look.dress)) bp.add(S.torus, look.dress === "peasant" ? "#d8283c" : look.accent, { y: 0.33, sx: 0.335, sy: 0.335, sz: 0.335, rx: Math.PI / 2, outline: false });
+  for (const acc of [look.accessory, look.neck]) {
+  if (acc === "pearls") for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; bp.add(S.sph, "#fffaf0", { x: Math.sin(a) * 0.085, y: 0.895 - Math.max(0, Math.cos(a)) * 0.03, z: Math.cos(a) * 0.08, sx: 0.022, sy: 0.022, sz: 0.022, outline: false }); }
+  if (acc === "diamonds") { for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; bp.add(S.sph, "#dff6ff", { x: Math.sin(a) * 0.085, y: 0.895 - Math.max(0, Math.cos(a)) * 0.03, z: Math.cos(a) * 0.08, sx: 0.02, sy: 0.02, sz: 0.02, outline: false, basic: true }); } bp.add(S.sph, "#bfe8ff", { y: 0.82, z: 0.15, sx: 0.035, sy: 0.045, sz: 0.025, outline: false, basic: true }); }
+  if (acc === "locket") { bp.add(S.torus, "#e8c36a", { y: 0.9, sx: 0.07, sy: 0.07, sz: 0.07, rx: Math.PI / 2 + 0.3, outline: false }); bp.add(S.sph, "#e8c36a", { y: 0.82, z: 0.16, sx: 0.03, sy: 0.035, sz: 0.015, outline: false }); }
   if (acc === "apron") { bp.add(S.box, look.accent, { y: 0.55, z: 0.2, sx: 0.3, sy: 0.4, sz: 0.04, rx: -0.29 }); bp.add(S.torus, look.accent, { y: 0.78, sx: 0.18, sy: 0.18, sz: 0.16, rx: Math.PI / 2, outline: false }); }
   if (acc === "smithapron") { bp.add(S.box, "#5a3e2a", { y: 0.58, z: 0.2, sx: 0.32, sy: 0.5, sz: 0.04, rx: -0.29 }); }
   if (acc === "choker") bp.add(S.torus, look.accent, { y: 0.92, sx: 0.065, sy: 0.065, sz: 0.065, rx: Math.PI / 2, outline: false });
   if (acc === "scarf") { bp.add(S.torus, look.accent, { y: 0.9, sx: 0.12, sy: 0.12, sz: 0.12, rx: Math.PI / 2 }); bp.add(S.box, look.accent, { x: 0.08, y: 0.78, z: 0.14, sx: 0.07, sy: 0.18, sz: 0.03, rz: 0.2 }); }
   if (acc === "sash") bp.add(S.torus, look.accent, { y: 0.66, sx: 0.25, sy: 0.25, sz: 0.25, rx: Math.PI / 2, rz: 0.6 });
+  }
+  const acc = look.accessory;
   if (look.hairStyle === "twintails" && acc === "goggles") { for (const s of [-1, 1]) bp.add(S.box, look.accent, { x: s * 0.1, y: 0.76, z: 0.14, sx: 0.04, sy: 0.25, sz: 0.03 }); }
   body.add(bp.build());
 
@@ -198,13 +305,15 @@ export function makeCharacter(look, { idle = "none", speed = 1 } = {}) {
   for (const s of [-1, 1]) {
     const pivot = new THREE.Group(); pivot.position.set(s * 0.2, 0.84, 0); body.add(pivot);
     const p = new Part();
-    p.add(S.capsule, look.outfit, { y: -0.08, sx: 0.06, sy: 0.06, sz: 0.06 });
+    p.add(S.capsule, sleeve, { y: -0.08, sx: 0.06, sy: look.dress === "gown" || look.dress === "peasant" ? 0.07 : 0.06, sz: 0.06 });
+    if (look.dress === "suit" || look.dress === "leather") p.add(S.capsule, sleeve, { y: -0.18, sx: 0.052, sy: 0.07, sz: 0.052 });
     p.add(S.capsule, look.skin, { y: -0.2, sx: 0.048, sy: 0.08, sz: 0.048 });
     p.add(S.sph, look.skin, { y: -0.31, sx: 0.06, sy: 0.06, sz: 0.06 });
     pivot.rotation.z = s * 0.12;
     pivot.add(p.build());
     arms.push(pivot);
   }
+  if (look.bag) arms[1].add(makeBag(look));
   if (idle === "cane") {
     const cane = new Part();
     cane.add(S.cyl, "#6a4a2a", { y: -0.3, sx: 0.02, sy: 0.75, sz: 0.02 });
@@ -224,6 +333,7 @@ export function makeCharacter(look, { idle = "none", speed = 1 } = {}) {
   for (const s of [-1, 1]) hp.add(S.sph, look.skin, { x: s * 0.33, y: -0.03, sx: 0.05, sy: 0.07, sz: 0.04, outline: false });
   hair(hp, look.hairStyle, look.hair, look.accent);
   headAccessory(hp, look);
+  for (const a of [look.hat, look.face, look.ears]) if (a) headAccessory(hp, look, a);
   head.add(hp.build());
   // face parts that animate
   const face = new THREE.Group(); head.add(face);
@@ -334,7 +444,7 @@ export function makeCharacter(look, { idle = "none", speed = 1 } = {}) {
   };
 }
 
-const shoe = (look) => new THREE.Color(look.outfit).multiplyScalar(0.55).getStyle();
+const shoe = (look) => look.shoeColor || new THREE.Color(look.outfit).multiplyScalar(0.55).getStyle();
 
 // ---------- someone walking around town ----------
 
@@ -426,4 +536,37 @@ export function portraits(list) {
   renderer.toneMapping = prevTone;
   rt.dispose();
   return out;
+}
+
+// ---------- a full-length picture for the wardrobe ----------
+
+let dressing = null;
+export function fullPortrait(look, { w = 300, h = 420, angle = 0.35 } = {}) {
+  if (!dressing || dressing.w !== w || dressing.h !== h) {
+    dressing?.rt.dispose();
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight("#ffffff", "#c8a0b8", 2.2));
+    const dl = new THREE.DirectionalLight("#ffffff", 1.6); dl.position.set(1, 2, 3); sc.add(dl);
+    const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+    dressing = { w, h, sc, cam: new THREE.PerspectiveCamera(24, w / h, 0.1, 30), rt: new THREE.WebGLRenderTarget(w, h, { colorSpace: THREE.SRGBColorSpace }), canvas, ctx: canvas.getContext("2d"), buf: new Uint8Array(w * h * 4), model: null };
+  }
+  const D = dressing;
+  if (D.model) D.sc.remove(D.model.root);
+  const m = makeCharacter(look, { idle: "none" });
+  m.update(0.016, 0, {});
+  m.root.rotation.y = angle;
+  D.sc.add(m.root); D.model = m;
+  const mid = m.height * 0.5;
+  D.cam.position.set(0, mid + 0.3, 6.3);
+  D.cam.lookAt(0, mid, 0);
+  renderer.setRenderTarget(D.rt);
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear();
+  renderer.render(D.sc, D.cam);
+  renderer.readRenderTargetPixels(D.rt, 0, 0, w, h, D.buf);
+  renderer.setRenderTarget(null);
+  const img = D.ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) img.data.set(D.buf.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+  D.ctx.putImageData(img, 0, 0);
+  return D.canvas.toDataURL("image/png");
 }

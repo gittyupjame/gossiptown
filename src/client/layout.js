@@ -84,6 +84,8 @@ export const PICKUPS = {
 };
 export const BOARD = { x: 6.2, z: -9.0 };
 export const BOARD_STAND = { x: 6.2, z: -7.9 };
+export const RACK = { x: 9.4, z: -9.5 };       // the clothes rack outside the salon
+export const RACK_STAND = { x: 9.4, z: -8.3 };
 
 export const PLAYER_START = { x: 2, z: 6 };
 export const HOST_SPOT = { x: -26, z: -44.2 };

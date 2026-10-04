@@ -13,6 +13,7 @@ export function showHud(on) { $("hud").classList.toggle("hidden", !on); }
 
 export function updateHud(s, placeName) {
   $("hud-day").textContent = s.day;
+  $("hud-coins").textContent = s.player.coins ?? 0;
   const m = Math.min(s.minute, 20 * 60);
   $("hud-time").textContent = `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
   $("hud-bar").style.width = `${((m - 480) / 720) * 100}%`;
@@ -84,6 +85,7 @@ function next() {
 // ---------- first-time tips ----------
 
 export const TIPS = {
+  looks: { icon: "👗", title: "They're judging your outfit", text: "Every woman has her own taste. What you wear changes how they feel about you, what they gossip about, and how they vote. Change your look at the clothes rack outside the salon; the producers add coins to your purse every morning." },
   welcome: { icon: "🚶‍♀️", title: "Welcome to Gossiptown", text: "Walk with <kbd>W A S D</kbd> or the arrow keys. Walk up to anyone and press <kbd>Enter</kbd> to talk. <kbd>Tab</kbd> opens your Gossip Board, <kbd>P</kbd> pauses." },
   talk: { icon: "💬", title: "Just say it", text: "Type anything and press <kbd>Enter</kbd>. She reacts to what you actually say: ask questions, flatter her, spill (or invent) gossip, propose a secret pact, or ask her to vote someone out. Empty <kbd>Enter</kbd> or walking away ends the chat." },
   overheard: { icon: "👂", title: "Eavesdropping", text: "Stand close to hear every word. From further away you only catch pieces. Get too close and they might catch you." },

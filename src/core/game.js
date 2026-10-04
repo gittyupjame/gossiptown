@@ -5,6 +5,7 @@
 import { newTown, SHOW } from "./cast.js";
 import * as sim from "./sim.js";
 import * as events from "./events.js";
+import * as looks from "./looks.js";
 
 const SAVE_KEY = "gossiptown.season.v2";
 
@@ -20,9 +21,12 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
 
   const save = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch {} };
 
-  function newSeason(playerName) {
+  function newSeason(playerName, outfit = null) {
     s = newTown({ playerName });
     s.phase = "day";
+    looks.setUp(s);
+    s.player.debuted = false; // the welcome party gets the first look
+    if (outfit) looks.dress(s, outfit);
     planShow();
     save();
     return s;
@@ -35,6 +39,7 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
     // seasons saved before there was anything to do around town
     s.notes ??= []; s.player.snooped ??= {}; s.player.fights ??= 0; s.player.carrying ??= null;
     s.shows ??= [];
+    looks.setUp(s); // seasons saved before outfits get the starter clothes and a full purse
     if (s.phase === "day") s.minute = Math.max(8 * 60, Math.min(s.minute, 19 * 60 + 45));
     if ((s.phase === "day" || s.phase === "show") && !events.showOf(s)) { s.phase = "day"; planShow(); }
     return s;
@@ -70,6 +75,7 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
   async function runTick() {
     busy = true; busyAt = performance.now();
     try { await sim.tick(s, ui); save(); } catch (e) { console.error("tick failed", e); }
+    try { if (s.phase === "day" && (await looks.notice(s, ui)).length) save(); } catch (e) { console.error("looks failed", e); }
     busy = false;
   }
 
@@ -95,6 +101,7 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
     s.day += 1; s.minute = 8 * 60; s.phase = "day";
     s.player.location = "plaza"; s.player.talkingTo = null;
     for (const v of sim.alive(s)) { v.location = "home"; v.approaching = false; }
+    looks.payday(s);
     planShow();
     save();
     ui.dawn?.(s);
@@ -211,6 +218,7 @@ export function createGame(ui, { daySeconds = 300 } = {}) {
   }
 
   return {
+    dress: (o) => { const r = looks.dress(s, o); save(); return r; }, bill: (o) => looks.bill(s, o), firstLooks: (opts) => looks.judgeAll(s, ui, opts),
     newSeason, load, save, update, nextDay, startBallots, resolveVote, afterVote, voteSetup,
     startTalk, endTalk, say, night, setDaySeconds, pickUp, snoop, postNote, fight, endShow,
     state: () => s,

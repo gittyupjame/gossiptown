@@ -138,6 +138,23 @@ export const VILLAGERS = [
   },
 ];
 
+
+// How each woman judges clothes. `loves`/`hates` are style words from wardrobe.js, `vain`
+// is how much looks matter to her (and how much she hates being outshone), `worth` is
+// roughly what her own outfit cost. Written into Jev states as words; priors only offline.
+export const FASHION = {
+  celeste:  { loves: ["glam", "flashy"], hates: ["frumpy", "practical"], vain: 1.0, worth: 300, text: "lives for glamour and labels, sneers at anything cheap or frumpy, and cannot stand being outshone in her own town" },
+  odette:   { loves: ["classy", "glam"], hates: ["boho", "cute"], vain: 0.6, worth: 240, text: "prices every outfit at a glance; respects money, despises cheapness, and wonders where new money came from" },
+  wren:     { loves: ["practical", "cute"], hates: ["flashy"], vain: 0.2, worth: 60, text: "cozy and down to earth; distrusts anyone who looks like they are trying too hard" },
+  sylvie:   { loves: ["edgy"], hates: ["cute", "flashy"], vain: 0.8, worth: 90, text: "dark and edgy herself; jealous of anyone prettier, sneers at sweet little looks" },
+  marigold: { loves: ["cute", "modest"], hates: ["edgy", "flashy"], vain: 0.2, worth: 40, text: "loves sweet, homey, modest clothes; a bit intimidated by anything loud or daring" },
+  pippa:    { loves: ["cute", "glam"], hates: ["frumpy"], vain: 0.6, worth: 110, text: "copies whatever Celeste likes, adores anything cute or sparkly, and cares a lot about looking cool" },
+  brenna:   { loves: ["practical", "sporty"], hates: ["glam", "flashy"], vain: 0.05, worth: 30, text: "thinks fussy clothes are for show-offs; respects boots and sleeves you can work in" },
+  juniper:  { loves: ["boho"], hates: ["glam", "flashy"], vain: 0.1, worth: 50, text: "free spirit in flowers and linen; finds glitz and labels soulless and fake" },
+  hesper:   { loves: ["classy", "modest"], hates: ["flashy", "edgy"], vain: 0.3, worth: 140, text: "old-fashioned; expects decent, tidy, proper dress and frowns on anything showy or rebellious" },
+  tansy:    { loves: ["edgy", "classy"], hates: ["frumpy"], vain: 0.4, worth: 120, text: "reads outfits like headlines: what someone wears is a story about who they are trying to be" },
+};
+
 export const PLAYER_LOOK = { skin: "#fbd9c4", hair: "#9a5a3a", hairStyle: "sidebun", outfit: "#f6a37a", accent: "#fff3e6", accessory: "scarf", height: 1.0 };
 
 // Starting feelings. affinity and trust run from -3 to 3.

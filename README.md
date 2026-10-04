@@ -86,6 +86,18 @@ plans to vote for, and sometimes it turns into a cat fight on the spot. It all
 goes into their memories, so it comes up again in conversations and at the
 vote.
 
+## Your look
+
+After you pick a name you dress yourself for your debut with a 150 coin budget: 60 priced pieces across outfits, shoes, hair, hair color, hats, necklaces, earrings, glasses and bags, plus free colors and skin tone. Every piece carries style words (glam, classy, cute, boho, edgy, practical, sporty, frumpy, flashy, modest).
+
+How you look matters because the women decide what they think of it, not a script:
+
+- Every woman has her own taste and vanity (Celeste lives for glamour and hates being outshone, Brenna thinks fussy clothes are for show-offs, Hesper wants proper and modest). It is written into her Jev state.
+- At the welcome party, and whenever a woman first sees a new outfit, Jev decides her verdict (hideous to stunning), her reaction (admires, sneers, jealous, thinks you copied her, wonders how you paid for it), whether she gossips about it and whether it makes you a threat.
+- That verdict goes into every later decision about you: conversations, walk-ups (she may come over just to gush or to snipe), crowd reactions at Primrose's shows, overnight plans and the vote. Gossip about your outfit spreads like any other rumor.
+- Wearing the same thing for days, dressing like one of the women, or looking far richer than anyone else are all things they notice.
+- The producers add 40 coins every morning. Spend them at the clothes rack outside the salon; pieces you own are free to put back on. The Gossip Board shows what each woman thinks of your current look.
+
 ## Sound
 
 Everything you hear is synthesized live in the browser with Web Audio (no sound files):
@@ -128,13 +140,15 @@ Add `?fast` to the URL for 8x game speed with lighter graphics.
     node test/show-smoke.mjs  # every show format through the core (offline stand-in)
     FORMAT=roast node test/show.mjs   # headless run of one show
     node test/audio.mjs       # music and sound levels, pause and mute
+    node test/looks-smoke.mjs # outfits, budget and first impressions without a page
+    node test/looks.mjs       # the outfit chooser and clothes rack in a headless browser
 
 ### Layout
 
 - `src/core`: the game itself, no graphics. `cast.js` (the women, places,
   alliances), `sim.js` (encounters, rumors, alliances, walk-ups, votes),
-  `game.js` (clock, days, vote nights, saving), `events.js` (Primrose's shows), `jev.js`, `voice.js`.
+  `game.js` (clock, days, vote nights, saving), `events.js` (Primrose's shows), `wardrobe.js` (pieces and prices), `looks.js` (what the women make of your outfit), `jev.js`, `voice.js`.
 - `src/client`: the 3D town (three.js). `town.js` and `layout.js` build the
   town, `people.js` the characters, `bubbles.js` the speech, `hud.js` the
   HUD, tips and screens, `tracker.js` the Gossip Board, `vote.js` the vote
-  ceremony, `fight.js` the cat fight dust cloud, `spotlight.js` Primrose's show, `audio.js` all music and sound, `main.js` ties it together.
+  ceremony, `fight.js` the cat fight dust cloud, `spotlight.js` Primrose's show, `audio.js` all music and sound, `closet.js` the outfit chooser, `main.js` ties it together.

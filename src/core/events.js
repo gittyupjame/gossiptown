@@ -7,6 +7,7 @@
 // The page plays the show (see src/client/spotlight.js) and calls these step by step.
 
 import * as jev from "./jev.js";
+import { lookText } from "./looks.js";
 import * as sim from "./sim.js";
 
 const { first, firstOf, nameOf, alive, clamp } = sim;
@@ -341,7 +342,7 @@ export async function crowdReacts(s, act, ui, { line = "" } = {}) {
       qs.payback = { type: "noul", instructions: `${first(L)} decides ${speakerName} has to be voted out for this.`, prior: Math.min(0.8, 0.15 + b.scheme * 0.3 + Math.max(0, -toS) * 0.15) };
     }
     const persona = sim.persona(s, L);
-    const j = await jev.ask({ ...persona, on_speaker: by === "player" ? sim.feelings(s, L, "player") : sim.feelings(s, L, s.people[by]), ...(x && !isX ? { on_subject: x === "player" ? sim.feelings(s, L, "player") : sim.feelings(s, L, s.people[x]) } : {}) }, qs, `show:crowd:${L.id}`);
+    const j = await jev.ask({ ...persona, ...(by === "player" && s.player.outfit ? { speaker_look: lookText(s) } : {}), on_speaker: by === "player" ? sim.feelings(s, L, "player") : sim.feelings(s, L, s.people[by]), ...(x && !isX ? { on_subject: x === "player" ? sim.feelings(s, L, "player") : sim.feelings(s, L, s.people[x]) } : {}) }, qs, `show:crowd:${L.id}`);
     const reaction = j.react.pick;
     out[L.id] = reaction;
     // how she feels about the speaker now

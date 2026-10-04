@@ -393,6 +393,15 @@ function salonExtras(g, w, d) {
   cyl(g, 0.16, 2.2, new THREE.MeshToonMaterial({ map: stripeTex("#ff8fb8", "#ffffff", 8), gradientMap: toon("#fff").gradientMap }), px, 1.3, pz);
   sph(g, 0.2, "#ffffff", px, 2.5, pz);
   for (const x of [-2.3, 2.0]) { box(g, 1.6, 0.14, 0.5, "#ff9ab8", x, 0.55, d / 2 + 2.2); for (const sx of [-0.6, 0.6]) box(g, 0.1, 0.5, 0.4, "#ffffff", x + sx, 0.27, d / 2 + 2.2); }
+  // the clothes rack: where the newcomer changes her look
+  const rx = -w / 2 - 0.1, rz = d / 2 + 0.75;
+  for (const sx of [-0.75, 0.75]) { cyl(g, 0.04, 1.9, "#c9a85a", rx + sx, 0.95, rz); cyl(g, 0.22, 0.05, "#c9a85a", rx + sx, 0.03, rz); }
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.6, 8), toon("#c9a85a")); bar.rotation.z = Math.PI / 2; bar.position.set(rx, 1.85, rz); g.add(bar);
+  ["#ff8fb8", "#6b4a9a", "#ffd76a", "#2a2430", "#7fbf8f", "#d8283c"].forEach((c, i) => {
+    const x = rx - 0.55 + i * 0.22;
+    const dr = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.17, 0.75, 10), toon(c)); dr.position.set(x, 1.38, rz); dr.rotation.y = i; g.add(dr);
+    sph(g, 0.03, "#c9a85a", x, 1.82, rz);
+  });
   // a big mirror
   const mir = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), toon("#d8f2ff", { emissive: "#c8e8ff" }));
   mir.position.set(-w / 2 + 1.2, 2.1, d / 2 + 0.08); g.add(mir);

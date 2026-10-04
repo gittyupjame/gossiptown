@@ -3,6 +3,7 @@
 
 import * as sim from "../core/sim.js";
 import { VILLAGERS } from "../core/cast.js";
+import { lookCue } from "../core/looks.js";
 
 const $ = (id) => document.getElementById(id);
 let tab = "tea";
@@ -139,12 +140,13 @@ function cast(s) {
     const ally = sim.alliancesOf(s, "player").some((a) => a.members.includes(v.id));
     return `<div class="castc ${v.gone ? "out" : ""}">${img(v.id, "")}<div><div class="c-arch">${esc(v.archetype)}</div><div class="c-name">${esc(v.name)}</div><div class="c-line">${esc(v.employed ? v.job : `out-of-work ${v.job}`)}</div>
       <div class="c-line">${v.gone ? `Voted out on day ${v.outDay}` : `${esc(sim.firstOf(s, v.id))} ${sim.vibe(s, v.id)}`}</div>
+      ${!v.gone && lookCue(s, v.id) ? `<div class="c-line">👗 ${esc(lookCue(s, v.id))}</div>` : ""}
       <div class="t-foot">${ally && !v.gone ? `<span class="chip good">your pact</span>` : ""}${about ? `<span class="chip">${about} rumor${about > 1 ? "s" : ""} about her</span>` : ""}</div></div></div>`;
   }).join("")}</div>`;
 }
 
 function votes(s) {
-  if (!s.votes.length) return `<div class="empty"><span class="big">🔥</span>No votes yet. The first one is on the night of day 3.</div>`;
+  if (!s.votes.length) return `<div class="empty"><span class="big">🔥</span>No votes yet. The first one is tonight at the firepit.</div>`;
   return [...s.votes].reverse().map((v) => {
     const rows = Object.entries(v.ballots).map(([voter, target]) => {
       const betrayed = v.betrayals?.some((b) => b.by === voter);
