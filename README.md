@@ -144,7 +144,21 @@ Code keeps the books and Jev reads them before every decision (`src/core/mind.js
   makes them look (`src/core/reading.js`). Negation is handled ("she's not
   fake"). Jev reads the words themselves; the reading steers the offline
   stand-in and gives Jev a hint.
-- `node test/realism.mjs [days]` measures all of this over a few days.
+- **Words are never just flavor.** Every conversation is written by Claude
+  (Haiku), including the ones between two women that nobody overhears. Each
+  written line comes back with the promises and claims in it, and code binds
+  them: "I'll have a word with Odette" becomes a plan she carries out, "I'm
+  voting Sylvie out" a vote promise, and a claim about someone a story the
+  listener now knows. Each pair's actual words are kept and shown to Claude
+  and Jev the next time they talk or decide anything.
+- **The promise book.** Everything anyone says she will do, the player
+  included, is recorded with whether she meant it. It is settled as kept,
+  broken or dropped, with the reason (she changed her vote, fell out with
+  the person, never got round to it). Votes are public, so broken vote
+  promises cost trust and are never forgotten. The Pacts & Promises tab
+  shows both sides.
+- `node test/realism.mjs [days]` measures all of this over a few days, and
+  `node test/words.mjs` checks that words bind.
 
 ## Develop
 

@@ -54,8 +54,11 @@ export function read(line, { names = {}, listener = null } = {}) {
     physical: has(low, /\b(slap|smack|punch|hit|shove|push|kick|scratch|claw|tackle|deck|slug)\w*\s+(you|ya|u|your|her)\b|\bfight me\b|\bpull your hair\b|\*(slaps|shoves|punches|pushes|hits)\b/) ? 1 : 0,
     gift: has(low, /\b(here|for you|gift|present|brought|got you|take (it|this)|treat)\b/) ? 0.8 : 0,
     deny: has(low, /\b(that's a lie|thats a lie|not true|never did|i didn't|i did not|lies|made that up|nonsense|rubbish)\b/) ? 0.9 : 0,
+    promise: has(low, /\b(i'll|i will|i'm going to|im going to|i'm gonna|im gonna|i promise|i swear|you have my word|count on me|leave it with me|consider it done)\b/) && !question ? 0.85 : 0,
     plead: has(low, /\b(please|keep me|give me a chance|deserve|don't send me|i want to stay|let me stay)\b/) ? 0.8 : 0,
   };
+  // "I'll vote her out" is a promise, not news and not asking her to
+  if (acts.promise) { acts.claim *= 0.3; if (!/\b(you|you're|your)\b/.test(low)) acts.vote_pitch *= 0.4; }
   const about = mentioned.length ? mentioned[0] : null;
   return {
     acts, mentioned, about, you, question: question > 0,
@@ -66,3 +69,38 @@ export function read(line, { names = {}, listener = null } = {}) {
 
 // Priors for a choice from a reading: strong evidence gets a big weight, none a small one.
 export const weigh = (x, hi = 12, lo = 0.15) => lo + x * (hi - lo);
+
+// What a promise is to do: "I'll vote Sylvie out" -> { kind: "vote", target: "sylvie" }.
+// names: { id: firstName }. Unrecognized deeds come back as { kind: "other" }.
+export function readDeed(text, names = {}) {
+  const low = ` ${String(text || "").toLowerCase().replace(/[’']/g, "'")} `;
+  const named = Object.entries(names).filter(([, n]) => n && new RegExp(`\\b${n.toLowerCase()}\\b`).test(low)).map(([id]) => id);
+  const target = named[0] || null;
+  const kinds = [
+    ["vote", /\b(vote|voting|send .* home|get rid of|eliminate|kick .* out)\b/],
+    ["pact", /\b(team up|alliance|pact|stick together|have your back|got your back|on your side)\b/],
+    ["confront", /\b(confront|have it out|have a word|give .* a piece of my mind|call .* out|set .* straight)\b/],
+    ["warn", /\b(warn|tip .* off|let .* know)\b/],
+    ["ask", /\b(ask|find out|check with|see if)\b/],
+    ["make_peace", /\b(make peace|make up|apologi[sz]e|patch things up|smooth things over)\b/],
+    ["report", /\b(hesper|the elder|report)\b/],
+    ["spread", /\b(tell everyone|spread|pass it on|let everyone know)\b/],
+    ["recruit", /\b(recruit|get .* on (our|my) side|bring .* in)\b/],
+    ["talk", /\b(talk to|speak to|speak with|talk with|go see|see|visit|find|catch up with|tell)\b/],
+  ];
+  for (const [kind, re] of kinds) if (re.test(low)) {
+    if (["vote", "confront", "warn", "ask", "make_peace", "recruit", "talk"].includes(kind) && !target) continue;
+    return { kind, target: kind === "spread" || kind === "report" ? null : target };
+  }
+  return { kind: "other", target };
+}
+
+// How much two sentences share, 0..1 (content words only), for matching a claim to a story.
+const STOP = new Set("the a an and or but to of in on at for with is was are were be been she her he his they them that this it its i you my your me we our just really so very has had have do did does not no about from by as".split(" "));
+export function overlap(a, b) {
+  const ws = (t) => new Set((String(t).toLowerCase().match(/[a-z']+/g) || []).filter((w) => w.length > 2 && !STOP.has(w)));
+  const A = ws(a), B = ws(b);
+  if (!A.size || !B.size) return 0;
+  let n = 0; for (const w of A) if (B.has(w)) n++;
+  return n / Math.min(A.size, B.size);
+}

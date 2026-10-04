@@ -12,6 +12,11 @@
 //             someone; plans she never gets round to lapse.
 //   vote plan who she means to vote out, how firmly, and why. A passing remark doesn't
 //             override a promise or a grudge.
+//   promises  the town's book of everything anyone said she would do, to whom, and whether
+//             she meant it. Each one stays open until it is kept, broken or dropped, and
+//             the reason is written down. The player's promises are in it too.
+//   talks     what each pair actually said to each other, so the next conversation (and
+//             every decision) picks up where the last one left off.
 
 import { clamp, clock, nameOf, first, alive } from "./sim.js";
 
@@ -139,6 +144,7 @@ export function nextPlan(v) { v.intent = v.plans?.shift() || null; }
 // drop plans aimed at someone who is gone
 export function prunePlans(s, v) {
   const ok = (p) => !p.target || p.target === "player" ? !(p.target === "player" && s.player.out) : !!s.people[p.target] && !s.people[p.target].gone;
+  for (const p of [v.intent, ...(v.plans || [])]) if (p && !ok(p) && p.commit) settle(s, byId(s, p.commit), "dropped", `${nameOf(s, p.target)} left town`);
   v.plans = (v.plans || []).filter(ok);
   if (v.intent && !ok(v.intent)) nextPlan(v);
 }
@@ -187,7 +193,70 @@ export function threatsTo(s, v) {
   return out;
 }
 
+// ---------- promises ----------
+
+// Anyone ("player" included) says she will do something. kind: vote, told_vote, pact, or a
+// plan kind (ask, warn, confront, spread, report, make_peace, recruit, lobby, talk, other).
+export function commit(s, { by, to, kind, target = null, rumor = null, what = null, sincere = true, heard = [] }) {
+  s.ledger ??= [];
+  const same = s.ledger.find((c) => c.status === "open" && c.by === by && c.to === to && c.kind === kind && c.target === target);
+  if (same) { if (what) same.what = what; same.heard = [...new Set([...same.heard, ...heard])]; return same; } // a lie stays a lie when it's repeated
+  const c = { id: "c" + (s.ledger.length + 1), by, to, kind, target, rumor, what, sincere, day: s.day, time: clock(s.minute), status: "open", heard: [...new Set([to, ...heard].filter(Boolean))] };
+  s.ledger.push(c);
+  return c;
+}
+export const openBy = (s, by, f = () => true) => (s.ledger || []).filter((c) => c.status === "open" && c.by === by && f(c));
+export const byId = (s, id) => (s.ledger || []).find((c) => c.id === id);
+
+// status: kept | broken | dropped
+export function settle(s, c, status, why = null) {
+  if (!c || c.status !== "open") return;
+  c.status = status; c.why = why; c.settledDay = s.day;
+}
+
+export function deedText(s, c, { by = true } = {}) {
+  const who = c.target ? nameOf(s, c.target) : "";
+  const d = {
+    vote: `vote out ${who}`, told_vote: `she's voting for ${who}`, pact: "stick together in a secret pact",
+    ask: `ask ${who} about it`, warn: `warn ${who}`, confront: `confront ${who}`, spread: "pass the story on", report: "take it to Hesper",
+    make_peace: `make peace with ${who}`, recruit: `get ${who} to team up`, lobby: `lobby ${who}`, talk: `go and talk to ${who}`,
+  }[c.kind] || c.what || "do something";
+  return by ? `${nameOf(s, c.by)} said she would ${c.kind === "told_vote" ? `vote out ${who}` : d}` : d;
+}
+
+// What she promised and what she was promised, for everything she decides.
+export function commitmentsText(s, id, { with: other = null, max = 5 } = {}) {
+  const mine = (s.ledger || []).filter((c) => (c.by === id || c.to === id) && (!other || c.by === other || c.to === other) && (c.status === "open" || s.day - (c.settledDay ?? s.day) <= 2));
+  return mine.slice(-max).map((c) => {
+    const what = deedText(s, c, { by: false }) + (c.what && !["vote", "told_vote", "pact"].includes(c.kind) ? ` ("${c.what}")` : "");
+    const state = c.status === "open" ? "not done yet" : c.status === "kept" ? "kept" : c.status === "broken" ? `broken${c.why ? `: ${c.why}` : ""}` : `dropped${c.why ? `: ${c.why}` : ""}`;
+    if (c.by === id) return `she told ${nameOf(s, c.to)} she would ${what} (day ${c.day}; ${c.sincere ? "she meant it" : "she was lying"}; ${state})`;
+    return `${nameOf(s, c.by)} told her she would ${what} (day ${c.day}; ${state})`;
+  });
+}
+
+// ---------- what was actually said ----------
+
+// lines: [{ who: id, text }]. Kept on both sides (the player's side lives on the woman).
+export function logTalk(s, a, b, lines) {
+  if (!lines?.length) return;
+  for (const [me, other] of [[a, b], [b, a]]) {
+    const v = s.people[me];
+    if (!v) continue;
+    v.talks ??= {};
+    const log = (v.talks[other] ??= []);
+    for (const l of lines) log.push({ day: s.day, time: clock(s.minute), who: l.who, text: l.text });
+    if (log.length > 14) log.splice(0, log.length - 14);
+  }
+}
+export function talkText(s, v, other, max = 8, { skip = 0 } = {}) {
+  const log = v.talks?.[other] || [];
+  return log.slice(0, log.length - skip).slice(-max).map((l) => `day ${l.day} ${l.time} ${l.who === "player" ? s.player.name : nameOf(s, l.who).split(" ")[0]}: ${l.text}`);
+}
+
 // ---------- the night ----------
+
+const planFor = (s, c) => { const v = s.people[c.by]; return v && [v.intent, ...(v.plans || [])].some((p) => p?.commit === c.id); };
 
 export function sleep(s) {
   const lapsed = [];
@@ -201,7 +270,14 @@ export function sleep(s) {
     if (v.votePlan) v.votePlan.strength = Math.max(0.75, (v.votePlan.strength ?? 1.5) - 0.25); // resolve softens unless renewed
   }
   settleFeelings(s);
-  for (const [v, p] of lapsed) if (p.promisedTo) remember(v, s, `never got round to what I told ${nameOf(s, p.promisedTo)} I'd do`, 2);
+  for (const [v, p] of lapsed) if (p.promisedTo) {
+    // a reason, if there is one: she fell out with whoever she promised
+    const fell = p.promisedTo && s.rel[v.id]?.[p.promisedTo]?.affinity < -1;
+    settle(s, byId(s, p.commit), "broken", fell ? `she fell out with ${nameOf(s, p.promisedTo)}` : "she never got round to it");
+    remember(v, s, `never got round to what I told ${nameOf(s, p.promisedTo)} I'd do`, 2);
+  }
+  // promises with nothing to carry them (an offhand "I'll talk to her") lapse after two days
+  for (const c of s.ledger || []) if (c.status === "open" && !["vote", "told_vote", "pact"].includes(c.kind) && s.day - c.day >= 2 && !planFor(s, c)) settle(s, c, "broken", c.by === "player" ? "never followed up" : "she never got round to it");
   return lapsed;
 }
 

@@ -757,6 +757,7 @@ function setPaused(on) {
   if (on && !paused) audio.sfx("pause");
   paused = on;
   audio.setPaused(on);
+  voice.setPaused(on);
   if (!on) setTimeout(() => audio.sfx("unpause"), 30);
   H.screen("pause", on);
   $("btn-pause").textContent = on ? "▶" : "❚❚";

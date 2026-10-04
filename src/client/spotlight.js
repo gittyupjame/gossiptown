@@ -159,6 +159,8 @@ export async function runShow(ctx) {
     const npcs = lineup.order.filter((id) => id !== "player");
     const acts = Object.fromEntries(await Promise.all(npcs.map(async (id) => [id, await E.npcAct(s, id, { assigned: lineup.assigned[id] })])));
     const linesP = voice.showLines({ items: npcs.map((id) => ({ v: s.people[id], what: E.actText(s, acts[id]) })), title: f.title, blurb: f.blurb, place, playerName: s.player.name }).catch(() => ({}));
+    // what they say in front of everyone counts: promises and claims made on stage are heard by the whole crowd
+    linesP.then((o) => sim.bindWords(s, o.facts, { speakers: npcs, listeners: [...sim.alive(s).filter((v) => v.location === ev.place).map((v) => v.id), "player"], ui: ctx.ui }));
     for (const id of lineup.order) {
       if (id !== "player" && s.people[id]?.gone) continue;
       const assigned = lineup.assigned[id];

@@ -124,11 +124,23 @@ function pacts(s) {
     const what = p.kind === "alliance" ? "agreed to a secret pact with you" : p.kind === "vote" ? `said she'd vote out ${nm(s, p.target)}` : `said she's voting for ${nm(s, p.target)}`;
     return `<div class="pact">${img(p.by)}<div style="flex:1"><b>${nm(s, p.by)}</b> ${what} <span class="muted">· Day ${p.day}</span></div>${status(p)}</div>`;
   };
-  const proms = [...s.player.promises].reverse();
+  const book = s.ledger || [];
+  const chip = (c) => {
+    if (c.status === "kept") return ["vote", "told_vote", "pact"].includes(c.kind) || c.seen || c.by === "player" ? `<span class="chip good">kept it</span>` : `<span class="chip">pending</span>`;
+    if (c.status === "broken") return `<span class="chip bad">${esc(c.kind === "vote" || c.kind === "told_vote" ? c.why || "broke it" : c.by === "player" ? "you never did" : "seems she never did")}</span>`;
+    if (c.status === "dropped") return `<span class="chip">${esc(c.why || "dropped")}</span>`;
+    return `<span class="chip">pending</span>`;
+  };
+  const deed = (c) => esc(c.kind === "told_vote" ? `said she's voting out ${nm(s, c.target)}` : c.kind === "pact" ? "agreed to a secret pact" : c.kind === "other" ? `said: “${c.what || ""}”` : `said she'd ${sim.deedText(s, c, { by: false })}`);
+  const toYou = book.filter((c) => c.to === "player").reverse();
+  const fromYou = book.filter((c) => c.by === "player").reverse();
+  const proms = toYou.length ? null : [...s.player.promises].reverse(); // older saves
   return `<div class="section-title">Your pacts</div>
     ${mine.length ? mine.map((a) => `<div class="pact"><b>${esc(a.name)}</b><div class="members">${a.members.filter((m) => m !== "player").map((m) => img(m)).join("")}</div><span class="muted">${a.members.filter((m) => m !== "player").map((m) => nm(s, m)).join(", ")}</span></div>`).join("") : `<p class="muted">No pacts yet. Try asking someone to team up.</p>`}
     <div class="section-title">What they promised you</div>
-    ${proms.length ? proms.map(line).join("") : `<p class="muted">Nobody has promised you anything. Ask who they're voting for, or ask them to vote someone out.</p>`}
+    ${toYou.length ? toYou.map((c) => `<div class="pact">${img(c.by)}<div style="flex:1"><b>${nm(s, c.by)}</b> ${deed(c)} <span class="muted">· Day ${c.day}</span></div>${chip(c)}</div>`).join("") : proms.length ? proms.map(line).join("") : `<p class="muted">Nobody has promised you anything. Ask who they're voting for, or ask them to vote someone out.</p>`}
+    <div class="section-title">What you promised</div>
+    ${fromYou.length ? fromYou.map((c) => `<div class="pact">${img(c.to)}<div style="flex:1">${c.kind === "other" ? `You promised <b>${nm(s, c.to)}</b>: “${esc(c.what || "")}”` : `You told <b>${nm(s, c.to)}</b> you'd ${esc(c.kind === "pact" ? "stick together" : sim.deedText(s, c, { by: false }))}`} <span class="muted">· Day ${c.day}</span></div>${chip(c)}</div>`).join("") : `<p class="muted">You haven't promised anyone anything. They will remember when you do.</p>`}
     <div class="section-title">Pacts you've uncovered</div>
     ${known.length ? known.map((a) => `<div class="pact"><b>${esc(a.name)}</b><div class="members">${a.members.filter((m) => !s.people[m]?.gone).map((m) => img(m)).join("")}</div><span class="muted">${a.members.filter((m) => !s.people[m]?.gone).map((m) => nm(s, m)).join(" + ")}</span></div>`).join("") : `<p class="muted">You haven't caught anyone teaming up yet. Pacts get made in whispers, so listen closely.</p>`}`;
 }

@@ -26,6 +26,10 @@ export async function initVoice() {
   return backend;
 }
 
+// tests: write the words with a function instead of Claude
+let testFn = null;
+export function __setWriter(fn) { testFn = fn; backend = fn ? "test" : null; }
+
 export function voiceStatus() {
   if (backend === "sample") return { live: failures < 3, label: "Claude (your account)" };
   if (backend === "server") return { live: failures < 3, label: "Claude (server)" };
@@ -52,12 +56,16 @@ const queue = []; // { pri, go }
 function slot(pri) {
   return new Promise((go) => { queue.push({ pri, go }); queue.sort((a, b) => b.pri - a.pri); pump(); });
 }
-function pump() { while (running < AT_ONCE && queue.length) { running++; queue.shift().go(); } }
-const PRI = { player: 2, vote: 1, background: 0 };
+function pump() { while (!held && running < AT_ONCE && queue.length) { running++; queue.shift().go(); } }
+const PRI = { player: 2, vote: 1, talk: 0, background: 0 };
+// While the game is paused nothing new is sent; queued lines wait.
+let held = false;
+export function setPaused(on) { held = !!on; if (!held) pump(); }
 
 async function raw(prompt, { maxMs = 30000, onText, pri = "background" } = {}) {
   if (!backend) { stats.fallbacks++; return null; }
-  // background chatter that would wait behind a long queue is not worth writing
+  // a retelling that would wait behind a long queue is not worth writing; conversations
+  // ("talk") always are, because what was said becomes part of the world
   if (pri === "background" && queue.length >= 6) { stats.fallbacks++; return null; }
   await slot(PRI[pri] ?? 0);
   try { return await call(prompt, { maxMs, onText }); } finally { running--; pump(); }
@@ -75,6 +83,8 @@ async function call(prompt, { maxMs, onText }) {
         const r = await sampleFn(prompt, { modelTier: "quick", cache: false, signal: ctrl.signal, onText: onText ? ({ text }) => onText(text) : undefined });
         text = r.text;
       } finally { clearTimeout(timer); }
+    } else if (backend === "test") {
+      text = await testFn(prompt);
     } else if (backend === "server") {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), maxMs);
@@ -96,57 +106,90 @@ async function call(prompt, { maxMs, onText }) {
 
 const clean = (t) => (t || "").trim().replace(/^["“]|["”]$/g, "").replace(/\*[^*]+\*/g, "").trim();
 
+// ---------- what got said, in a form the game can act on ----------
+// Every written conversation ends with a list of the promises and claims in it, so the
+// words never float free of the game: code turns each one into a plan, a vote, a promise
+// in the book or a rumor someone now knows.
+const FACTS = `After the words, write a line with only --- on it. Under it, one line for each thing a speaker said she WILL do (a promise, a plan, who she is voting for) and each claim a speaker made about another woman, in exactly this form:
+WILL | speaker's first name | first name of who she said it to | what she will do, in a few words
+CLAIM | speaker's first name | first name of who it is about | the claim as one plain sentence
+Write NONE under the line if there is nothing like that. Only list what the words actually say.`;
+
+export function splitFacts(text) {
+  if (!text) return { body: text, facts: [] };
+  const i = text.search(/\n\s*---/);
+  const body = (i >= 0 ? text.slice(0, i) : text.replace(/\n\s*(WILL|CLAIM|NONE)\b[\s\S]*$/, "")).trim();
+  const tail = i >= 0 ? text.slice(i) : (text.match(/\n\s*((WILL|CLAIM)\b[\s\S]*)$/) || [, ""])[1];
+  const facts = tail.split("\n").map((l) => l.split("|").map((x) => x.trim())).filter((p) => p.length >= 4 && /^(WILL|CLAIM)$/i.test(p[0]))
+    .map(([type, by, to, what]) => ({ type: type.toUpperCase(), by, to, what: clean(what) }));
+  return { body, facts };
+}
+// streaming: show only the spoken part
+const spoken = (t) => (t || "").split(/\n\s*(---|WILL\b|CLAIM\b|NONE\b)/)[0];
+const pastText = (earlier, promises) => `${earlier?.length ? `What you two have said to each other before:\n${earlier.join("\n")}\n` : ""}${promises?.length ? `Promises between you (keep them in mind; never pretend one wasn't made):\n${promises.join("\n")}\n` : ""}`;
+
 const describe = (v) => `${v.name}, the ${v.job} (${v.archetype}). Personality: ${v.traits.join(", ")}. Speaks: ${v.voice}.`;
 const ONLY = "Do not have anyone promise, announce or hint at any plan, vote or next step other than the ones listed here.";
 
 // ---------- the cast member answers the player ----------
 
 export async function reply(ctx, onText) {
-  const { v, playerName, history, line, stance, react, plan, otherPlan, opinion, mood } = ctx;
+  const { v, playerName, history, line, stance, react, plan, otherPlan, opinion, mood, earlier, promises } = ctx;
   const text = await raw(`${STYLE(playerName)}
 
 You are ${describe(v)}
 Your mood: ${mood}. What you think of ${playerName}: ${opinion}.
-Conversation so far:
+${pastText(earlier, promises)}Conversation so far:
 ${history.slice(-8).join("\n") || "(just started)"}
 ${playerName} says: ${line}
 How you respond: ${stance}. ${react.join(" ")}
 ${plan ? `You have decided to ${plan}. You may say so.` : `You have not decided to do anything about this.${otherPlan ? ` (You already mean to ${otherPlan}; mention it only if it fits.)` : ""}`}
 ${ONLY}
-Reply as ${first(v)} in 1 to 2 short sentences, in your own voice. Keep it under 30 words.`, { onText, pri: "player" });
-  return text || phrase.reply(ctx);
+Reply as ${first(v)} in 1 to 2 short sentences, in your own voice. Keep it under 30 words.
+${FACTS}`, { onText: onText ? (x) => onText(spoken(x)) : undefined, pri: "player" });
+  if (!text) return { text: phrase.reply(ctx), facts: [] };
+  const { body, facts } = splitFacts(text);
+  return { text: body || phrase.reply(ctx), facts };
 }
 
 // ---------- a cast member walks up to the player ----------
 
 export async function opener(ctx) {
-  const { v, playerName, purpose, detail, opinion } = ctx;
+  const { v, playerName, purpose, detail, opinion, earlier, promises } = ctx;
   const text = await raw(`${STYLE(playerName)}
 
 You are ${describe(v)}
 What you think of ${playerName}: ${opinion}.
+${pastText(earlier, promises)}
 You walk straight up to ${playerName} to ${purpose}${detail ? `: ${detail}` : ""}.
 ${ONLY}
-Say your opening line as ${first(v)}, 1 to 2 short sentences, under 25 words.`, { maxMs: 12000, pri: "player" });
-  return text || phrase.opener(ctx);
+Say your opening line as ${first(v)}, 1 to 2 short sentences, under 25 words.
+${FACTS}`, { maxMs: 12000, pri: "player" });
+  const { body, facts } = splitFacts(text);
+  return body ? { text: body, facts } : { text: phrase.opener(ctx), facts: [] };
 }
 
 // ---------- two cast members talking, overheard by the player ----------
 
 export async function exchange(ctx) {
-  const { a, b, playerName, topic, rumorText, aboutName, outcome, next } = ctx;
+  const { a, b, playerName, topic, rumorText, aboutName, outcome, next, earlier, promises } = ctx;
   const text = await raw(`${STYLE(playerName)}
 
 Write a short exchange of 3 to 4 lines between two women, each line starting with the speaker's first name and a colon.
 ${describe(a)}
 ${describe(b)}
+${pastText(earlier, promises).replace(/you two/g, "these two").replace(/between you/, "between them")}
 What they talk about: ${topic}${rumorText ? `. The story${aboutName ? ` (about ${aboutName})` : ""}: "${rumorText}"` : ""}.
 How it ends: ${outcome}.
 ${next.length ? `What they decide to do next: ${next.join("; ")}.` : "Nobody decides to do anything next."}
 ${ONLY}
-Each line under 18 words. No blank lines.`);
-  const lines = parseLines(text, [a, b]);
-  return lines.length >= 2 ? lines : phrase.exchange(ctx);
+Each line under 18 words. No blank lines.
+${FACTS}`, { pri: "talk", maxMs: 45000 });
+  const { body, facts } = splitFacts(text);
+  const lines = parseLines(body, [a, b]);
+  const out = lines.length >= 2 ? lines : phrase.exchange(ctx);
+  out.facts = lines.length >= 2 ? facts : [];
+  return out;
 }
 
 function parseLines(text, people) {
@@ -187,9 +230,12 @@ export async function showLines({ items, title, blurb, place, playerName }) {
 The host Primrose is running a show for the whole town called "${title}" at ${place}: ${blurb}
 Each of these women gets the floor in front of everyone and does exactly what is listed.
 ${items.map((it) => `- ${describe(it.v)} What she does: ${it.what}.`).join("\n")}
-Write what each one says, each starting with her first name and a colon, in her own voice, playing to the crowd. One or two sentences, under 32 words each. ${ONLY} No other text.`, { maxMs: 25000, pri: "vote" });
+Write what each one says, each starting with her first name and a colon, in her own voice, playing to the crowd. One or two sentences, under 32 words each. ${ONLY} For the list below, "who she said it to" is "everyone".
+${FACTS}`, { maxMs: 25000, pri: "vote" });
+  const { body, facts } = splitFacts(text);
   const out = {};
-  for (const l of parseLines(text, items.map((it) => it.v))) out[l.id] = l.text;
+  for (const l of parseLines(body, items.map((it) => it.v))) out[l.id] = l.text;
+  Object.defineProperty(out, "facts", { value: facts, enumerable: false });
   return out;
 }
 

@@ -32,7 +32,7 @@ async function say(prompt) {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 300, messages: [{ role: "user", content: prompt }] }),
+      body: JSON.stringify({ model: MODEL, max_tokens: 450, messages: [{ role: "user", content: prompt }] }),
       signal: AbortSignal.timeout(30000),
     });
     const d = await r.json();
