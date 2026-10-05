@@ -7,8 +7,8 @@ import { fireState, fx } from "./town.js";
 import * as B from "./bubbles.js";
 import * as H from "./hud.js";
 import * as L from "./layout.js";
-import * as voice from "../core/voice.js";
 import * as sim from "../core/sim.js";
+import * as audio from "./audio.js";
 
 const CENTRE = new THREE.Vector3(L.FIREPIT.x, 0, L.FIREPIT.z);
 
@@ -51,15 +51,11 @@ export async function runVote(ctx) {
   const host = ctx.walker("primrose");
   host.x = L.HOST_SPOT.x; host.z = L.HOST_SPOT.z; host.face = { x: CENTRE.x, z: CENTRE.z }; host.heading = 0;
   ctx.cam.orbit(CENTRE, 13, 7.5, 0.12);
-  // while the player chooses, Jev casts the cast's ballots and Claude writes their lines
+  // while the player chooses, Jev casts the cast's ballots and Claude writes each voter's
+  // line from her own reasons
   let spoken = {};
-  game.startBallots().then((ballots) => {
-    const items = Object.entries(ballots).filter(([id]) => s.people[id]).map(([id, target]) => {
-      const v = s.people[id];
-      return { v, target: first(target), feeling: sim.feel(s.rel[id]?.[target]?.affinity ?? 0), why: v.votePlan?.target === target ? v.votePlan.why : "" };
-    });
-    return voice.ballotLines({ items, playerName: s.player.name, finale });
-  }).then((lines) => { spoken = lines || {}; }).catch(() => {});
+  game.startBallots();
+  const linesP = game.ballotLines().then((lines) => { spoken = lines || {}; }).catch(() => {});
   await ctx.wait(400);
   await H.fade(false);
   H.voteHud(finale ? "The Finale" : "The Vote", `Night ${s.day}`);
@@ -78,7 +74,7 @@ export async function runVote(ctx) {
   } else {
     const n = sim.alive(s).length + (s.player.out ? 0 : 1);
     await hostSay(pick([`Good evening, ladies. Welcome to the firepit.`, `Ladies. Take your seats. You know why we're here.`, `Welcome back to the firepit, my little backstabbers.`]));
-    await hostSay(pick([`${n} of you sitting here. Three days of whispers, pacts and promises.`, `Smiles all week. Knives tonight.`, `I've heard things. Oh, I've heard things.`]));
+    await hostSay(pick([`${n} of you sitting here. A whole day of whispers, pacts and promises.`, `Smiles all day. Knives tonight.`, `I've heard things. Oh, I've heard things.`]));
     await hostSay(`Tonight, one of you leaves Gossiptown for good.`);
   }
 
@@ -102,6 +98,7 @@ export async function runVote(ctx) {
   // ---------- reading the votes ----------
   await hostSay(finale ? "The jury has voted." : "The votes are in.", 1800);
   ctx.cam.orbit(CENTRE, 12, 8, 0.08);
+  await Promise.race([linesP, ctx.wait(20000)]);
   const result = await game.resolveVote(playerBallot);
   const pw = ctx.walker("player"); if (seats.player) { pw.stop(); pw.x = seats.player.x; pw.z = seats.player.z; pw.face = { x: CENTRE.x, z: CENTRE.z }; }
   await hostSay(finale ? "When I read your name, you get the jury's vote." : "I'll read them one at a time.", 2000);
@@ -124,21 +121,25 @@ export async function runVote(ctx) {
         const vw = ctx.walker(voter, true);
         ctx.cam.shot(vec(vw.x, 1.4, vw.z), 4.2, { from: CENTRE });
         const own = ri === 0 && result.rounds[0].ballots[voter] === target ? spoken[voter] : null;
-        const line = voter === "player" ? `${first(target)}.` : own || ballotLine(s, voter, target, finale);
-        B.say(voter, line, { name: voter === "player" ? s.player.name : first(voter), color: voter === "player" ? "#e86f5a" : "#ff6f9c", you: voter === "player", hold: 1.2 });
-        await ctx.wait(1100);
+        // the host reads each ballot; the voter's own line (written from her real reasons) if she has one
+        if (voter === "player") B.say("player", `${first(target)}.`, { name: s.player.name, color: "#e86f5a", you: true, hold: 1.2 });
+        else if (own) B.say(voter, own, { name: first(voter), color: "#ff6f9c", hold: Math.max(1.4, own.length / 14) });
+        else B.say("primrose", `${first(voter)}: ${first(target)}.`, { name: "Primrose", color: "#e8577e", hold: 1.2 });
+        // why she really voted that way, straight from her decision
+        const why = voter !== "player" && ri === 0 ? result.reasons?.[voter] : null;
+        if (why?.length) H.chyron(`${first(voter)}'s reasons: ${why.join("; ")}`, "info");
+        await ctx.wait(own ? Math.max(1400, own.length * 45) : 1100);
         await flyBallot(ctx, voter, target);
       }
       setTally(target, counts[target]);
       if (!skipping) {
         const tw = ctx.walker(target);
         ctx.cam.shot(vec(tw.x, 1.4, tw.z), 4.8, { from: CENTRE });
-        const wasAlly = !finale && voter !== "player" && target !== "player" && sim.alliancesOf(s, target).some((a) => a.members.includes(voter));
-        const promised = target === "player" && s.player.promises.some((p) => p.by === voter && (p.kind === "alliance" || (p.kind === "vote" && p.target !== "player")));
+        const wasAlly = !finale && voter !== "player" && target !== "player" && (result.pactBreaks || []).some((b) => b.by === voter && b.of === target);
+        const promised = target === "player" && (result.betrayals || []).some((b) => b.by === voter);
         if (target !== "player") {
           ctx.model(target)?.surprise();
           B.emote(target, wasAlly ? "anger" : counts[target] >= 3 ? "sad" : "gasp");
-          if (wasAlly || Math.random() < 0.35) B.say(target, voice.phrase.voteReaction({ v: s.people[target], voter: voter === "player" ? { name: s.player.name } : s.people[voter], wasAlly }), { name: first(target), hold: 1.2 });
         } else if (promised) {
           H.chyron(`${first(voter)} promised you, and voted for you anyway.`, "bad");
         }
@@ -155,29 +156,31 @@ export async function runVote(ctx) {
   const total = Object.values(result.rounds.at(-1).ballots).filter((t) => t === chosen).length;
   if (result.drawn) await hostSay(`Still tied! So the fire decides...`, 2400);
   if (finale) {
+    audio.sting("drumroll", 2.4);
     await hostSay(`With ${total} vote${total === 1 ? "" : "s"}, the Queen of Gossiptown is...`, 2600);
     const cw = ctx.walker(chosen);
     ctx.cam.shot(vec(cw.x, 1.5, cw.z), 4.5, { from: CENTRE });
     await ctx.wait(900);
     B.emote(chosen, "crown");
+    audio.sting(chosen === "player" ? "fanfare" : "good");
+    audio.crowd({ loved: 6 });
     confetti(ctx, cw);
     await sayAndWait(ctx, "primrose", `${chosen === "player" ? s.player.name : first(chosen)}!`, 2600);
-    if (chosen !== "player") await sayAndWait(ctx, chosen, pick(["I'd like to thank... me.", "Was there ever any doubt, darlings?", "I did it! Honest, I did it!", "Every rumor was worth it."]).replace(/darlings|Honest, /g, (m) => m), 2600);
   } else {
     const ow = ctx.walker(chosen);
+    audio.sting("drumroll", 2.6);
     await hostSay(`With ${total} vote${total === 1 ? "" : "s"}...`, 2000);
     ctx.cam.shot(vec(ow.x, 1.5, ow.z), 4.4, { from: CENTRE });
     await ctx.wait(900);
+    audio.sting("eliminated");
     await sayAndWait(ctx, "primrose", `${chosen === "player" ? s.player.name : first(chosen)}. The town has spoken.`, 2600);
     snuff(chosen);
+    audio.sfx("fizzle");
     if (chosen !== "player") {
-      const v = s.people[chosen];
-      const votedBy = Object.entries(result.ballots).filter(([, t]) => t === chosen).map(([x]) => first(x));
-      const betrayedBy = votedBy.filter((n) => sim.alliancesOf({ ...s, people: { ...s.people, [chosen]: { ...v, gone: false } } }, chosen).some((a) => a.members.some((m) => first(m) === n)));
+      // her last word: a real line, said to everyone, and it counts
       const b = B.thinking(chosen, { name: first(chosen) });
-      const line = await voice.partingShot({ v, playerName: s.player.name, votedBy, betrayedBy });
-      b.reveal(line);
-      await ctx.wait(Math.max(3200, line.length * 55));
+      const got = await game.partingShot(chosen);
+      if (got?.line) { b.reveal(got.line); await ctx.wait(Math.max(3200, got.line.length * 55)); }
       b.close();
       // she walks out of the ring and down the path, out of town
       ctx.leave(chosen);
@@ -200,6 +203,7 @@ export async function runVote(ctx) {
   function setTally(id, n) {
     if (!tallies[id]) tallies[id] = B.label(id, `<span>0</span>`, "tally", 0.9);
     tallies[id].el.querySelector("span").textContent = n;
+    audio.sfx("tally", { n: Math.min(12, n * 2) });
     tallies[id].el.querySelector("span").style.animation = "none"; void tallies[id].el.offsetWidth; tallies[id].el.querySelector("span").style.animation = "";
   }
   function makeTorch(id, seat) {
@@ -235,19 +239,6 @@ function orderBallots(ballots, last) {
   return entries;
 }
 
-function ballotLine(s, voter, target, finale) {
-  const t = sim.firstOf(s, target);
-  if (finale) return pick([`${t}. She earned it.`, `${t}. Ugh. Fine.`, `${t}, obviously.`]);
-  const v = s.people[voter];
-  const lines = {
-    celeste: [`${t}. Nothing personal, darling.`, `Sorry, ${t}. Kisses.`], odette: [`${t}. Consider your debt paid.`, `${t}. Business is business.`],
-    wren: [`Oh, love... ${t}.`, `${t}. Sorry, love!`], sylvie: [`${t}. Obviously.`, `${t}. Bye.`], marigold: [`I'm so sorry... ${t}.`, `${t}. Oh gosh, I'm sorry.`],
-    pippa: [`Um. ${t}? Honest, sorry!`, `${t}! Wait, is that right? Yes. ${t}.`], brenna: [`${t}. You know why.`, `${t}.`], juniper: [`The cards said ${t}.`, `${t}. The moon agrees.`],
-    hesper: [`${t}. For the good of the town.`, `${t}, dear.`], tansy: [`${t}. Great story, though.`, `${t}. It's nothing personal. It's editorial.`],
-  }[v?.id] || [`${t}.`];
-  return pick(lines);
-}
-
 async function flyBallot(ctx, from, to) {
   const a = ctx.walker(from, true), b = ctx.walker(to);
   const tex = ballotTex();
@@ -256,6 +247,7 @@ async function flyBallot(ctx, from, to) {
   scene.add(sp);
   const p0 = new THREE.Vector3(a.x, 1.6, a.z), p1 = new THREE.Vector3(b.x, 2.2, b.z);
   ctx.cam.shot(p0.clone().lerp(p1, 0.5).setY(1.4), 7, { from: CENTRE });
+  audio.sfx("whoosh");
   const dur = 900;
   let t = 0;
   await new Promise((resolve) => {
@@ -265,7 +257,7 @@ async function flyBallot(ctx, from, to) {
       sp.position.copy(p0).lerp(p1, u);
       sp.position.y += Math.sin(u * Math.PI) * 2.2;
       sp.material.rotation = u * 6;
-      if (u >= 1) { ctx.stopFrame(tick); scene.remove(sp); resolve(); }
+      if (u >= 1) { ctx.stopFrame(tick); scene.remove(sp); audio.sfx("thunk"); resolve(); }
     };
     ctx.everyFrame(tick);
   });

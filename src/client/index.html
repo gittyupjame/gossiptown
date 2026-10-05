@@ -19,12 +19,16 @@
 <div id="hud" class="hidden">
   <div class="hud-left">
     <div id="daypill"><div class="dp-top"><span class="dp-day">Day <b id="hud-day">1</b></span><span class="dp-time" id="hud-time">08:00</span></div><div class="daybar"><i id="hud-bar"></i></div></div>
-    <div id="votepill"><span class="flame">🔥</span><span id="hud-vote">Vote in 3 days</span></div>
+    <div id="votepill"><span class="flame">🔥</span><span id="hud-vote">Vote TONIGHT</span></div>
     <div id="placepill"></div>
+    <div id="coinpill" title="Your purse. The producers add more every morning; spend it at the clothes rack by the salon.">🪙 <b id="hud-coins">0</b></div>
+    <div id="carrypill" class="hidden"></div>
+    <div id="showpill" class="hidden"></div>
   </div>
   <div class="hud-right">
     <div id="brain" title=""><i></i><span></span></div>
     <button id="btn-board" class="hbtn">☕ Gossip Board <kbd>Tab</kbd></button>
+    <button id="btn-mute" class="hbtn round" title="Sound on/off (M)">🔊</button>
     <button id="btn-pause" class="hbtn round" title="Pause (P)">❚❚</button>
   </div>
 </div>
@@ -59,7 +63,7 @@
   <div class="title-inner">
     <div class="logo-sub">a cozy little reality show</div>
     <h1 class="logo">Gossiptown</h1>
-    <div class="logo-tag">Ten women. One tiny town. Every three days, somebody gets voted out.</div>
+    <div class="logo-tag">Ten women. One tiny town. Every night, somebody gets voted out.</div>
     <div class="title-btns">
       <button class="big-btn" id="t-new">New Season</button>
       <button class="big-btn alt" id="t-continue">Continue</button>
@@ -122,12 +126,16 @@
 <div id="settings" class="screen">
   <div class="card center pop">
     <div class="card-kicker">Settings</div>
-    <h2>How Gossiptown thinks</h2>
+    <h2>Settings</h2>
     <div class="set-row"><div><b>Decisions</b><div class="muted" id="set-jev-status"></div></div></div>
     <label class="set-label">Jev API key <span class="muted">(kept only in this browser)</span></label>
     <input id="set-jev-key" type="password" placeholder="apikey_..." autocomplete="off">
     <div class="muted set-note">If this page can't reach Jev, a stand-in that knows each woman's personality makes the decisions instead.</div>
     <div class="set-row"><div><b>Dialogue</b><div class="muted" id="set-voice-status"></div></div></div>
+    <label class="set-label">Music</label>
+    <input id="set-music" class="slider" type="range" min="0" max="1" step="0.05">
+    <label class="set-label">Sound effects and voices</label>
+    <input id="set-sound" class="slider" type="range" min="0" max="1" step="0.05">
     <label class="set-label">Day length</label>
     <div class="seg" id="set-day"><button data-v="180">3 min</button><button data-v="300">5 min</button><button data-v="480">8 min</button></div>
     <div class="title-btns"><button class="big-btn" id="set-ok">Done</button></div>
@@ -135,6 +143,7 @@
 </div>
 
 <div id="votecards"></div>
+<div id="fightmeter"><i></i><span><b>You</b><b id="fm-her">Her</b></span></div>
 <div id="votehud"><div class="vh-title"></div><div class="vh-sub"></div></div>
 <div id="fade"></div>
 

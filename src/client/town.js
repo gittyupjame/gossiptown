@@ -393,6 +393,15 @@ function salonExtras(g, w, d) {
   cyl(g, 0.16, 2.2, new THREE.MeshToonMaterial({ map: stripeTex("#ff8fb8", "#ffffff", 8), gradientMap: toon("#fff").gradientMap }), px, 1.3, pz);
   sph(g, 0.2, "#ffffff", px, 2.5, pz);
   for (const x of [-2.3, 2.0]) { box(g, 1.6, 0.14, 0.5, "#ff9ab8", x, 0.55, d / 2 + 2.2); for (const sx of [-0.6, 0.6]) box(g, 0.1, 0.5, 0.4, "#ffffff", x + sx, 0.27, d / 2 + 2.2); }
+  // the clothes rack: where the newcomer changes her look
+  const rx = -w / 2 - 0.1, rz = d / 2 + 0.75;
+  for (const sx of [-0.75, 0.75]) { cyl(g, 0.04, 1.9, "#c9a85a", rx + sx, 0.95, rz); cyl(g, 0.22, 0.05, "#c9a85a", rx + sx, 0.03, rz); }
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.6, 8), toon("#c9a85a")); bar.rotation.z = Math.PI / 2; bar.position.set(rx, 1.85, rz); g.add(bar);
+  ["#ff8fb8", "#6b4a9a", "#ffd76a", "#2a2430", "#7fbf8f", "#d8283c"].forEach((c, i) => {
+    const x = rx - 0.55 + i * 0.22;
+    const dr = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.17, 0.75, 10), toon(c)); dr.position.set(x, 1.38, rz); dr.rotation.y = i; g.add(dr);
+    sph(g, 0.03, "#c9a85a", x, 1.82, rz);
+  });
   // a big mirror
   const mir = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), toon("#d8f2ff", { emissive: "#c8e8ff" }));
   mir.position.set(-w / 2 + 1.2, 2.1, d / 2 + 0.08); g.add(mir);
@@ -910,6 +919,35 @@ function bake() {
   scene.add(merged);
 }
 
+// ---------- the Whisper's notice board ----------
+// Anyone can pin an anonymous note here. The pinned notes are drawn live on top.
+const boardNotes = new THREE.Group();
+function buildBoard() {
+  const g = new THREE.Group(); g.position.set(L.BOARD.x, 0, L.BOARD.z); staticRoot.add(g);
+  for (const sx of [-1, 1]) cyl(g, 0.08, 2.2, "#7a5236", sx * 0.95, 1.1, 0);
+  box(g, 2.2, 1.3, 0.12, "#7a5236", 0, 1.55, 0);
+  box(g, 2.0, 1.1, 0.06, "#d9a86a", 0, 1.55, 0.06);
+  box(g, 2.5, 0.14, 0.4, "#3a8f8a", 0, 2.3, 0.05);
+  // a couple of old notices that never come down
+  box(g, 0.42, 0.5, 0.02, "#fffbe8", -0.6, 1.62, 0.1);
+  box(g, 0.36, 0.3, 0.02, "#e8f6ff", 0.55, 1.35, 0.1);
+  L.OBSTACLES.push({ x: L.BOARD.x - 0.95, z: L.BOARD.z, r: 0.25 }, { x: L.BOARD.x + 0.95, z: L.BOARD.z, r: 0.25 }, { x: L.BOARD.x, z: L.BOARD.z, r: 0.5 });
+  boardNotes.position.copy(g.position);
+  scene.add(boardNotes);
+}
+const NOTE_SPOTS = [[-0.1, 1.75, -0.12], [0.3, 1.8, 0.1], [-0.25, 1.3, 0.06], [0.15, 1.38, -0.08], [0.72, 1.82, 0.14], [-0.75, 1.25, -0.1]];
+export function setBoardNotes(n) {
+  while (boardNotes.children.length > n) boardNotes.remove(boardNotes.children.at(-1));
+  while (boardNotes.children.length < Math.min(n, NOTE_SPOTS.length)) {
+    const [x, y, rz] = NOTE_SPOTS[boardNotes.children.length];
+    const note = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.4, 0.02), toon("#ffd6e6"));
+    note.position.set(x, y, 0.11); note.rotation.z = rz;
+    const pin = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), toon("#e8577e"));
+    pin.position.set(0, 0.15, 0.02); note.add(pin);
+    boardNotes.add(note);
+  }
+}
+
 export function buildTown() {
   buildGround();
   buildWater();
@@ -923,6 +961,7 @@ export function buildTown() {
   buildGate();
   buildBridge();
   buildGarden();
+  buildBoard();
   buildLamps();
   buildNature();
   buildParticles();

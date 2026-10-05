@@ -11,8 +11,8 @@
 
 export const SHOW = {
   name: "Gossiptown",
-  tagline: "Ten women. One tiny town. Every few days, somebody gets voted out.",
-  voteEvery: 3, // in-game days between votes
+  tagline: "Ten women. One tiny town. Every night, somebody gets voted out.",
+  voteEvery: 1, // in-game days between votes
   finalists: 3, // the season ends when this many are left (you included)
 };
 
@@ -138,6 +138,23 @@ export const VILLAGERS = [
   },
 ];
 
+
+// How each woman judges clothes. `loves`/`hates` are style words from wardrobe.js, `vain`
+// is how much looks matter to her (and how much she hates being outshone), `worth` is
+// roughly what her own outfit cost. Written into Jev states as words; priors only offline.
+export const FASHION = {
+  celeste:  { loves: ["glam", "flashy"], hates: ["frumpy", "practical"], vain: 1.0, worth: 300, text: "lives for glamour and labels, sneers at anything cheap or frumpy, and cannot stand being outshone in her own town" },
+  odette:   { loves: ["classy", "glam"], hates: ["boho", "cute"], vain: 0.6, worth: 240, text: "prices every outfit at a glance; respects money, despises cheapness, and wonders where new money came from" },
+  wren:     { loves: ["practical", "cute"], hates: ["flashy"], vain: 0.2, worth: 60, text: "cozy and down to earth; distrusts anyone who looks like they are trying too hard" },
+  sylvie:   { loves: ["edgy"], hates: ["cute", "flashy"], vain: 0.8, worth: 90, text: "dark and edgy herself; jealous of anyone prettier, sneers at sweet little looks" },
+  marigold: { loves: ["cute", "modest"], hates: ["edgy", "flashy"], vain: 0.2, worth: 40, text: "loves sweet, homey, modest clothes; a bit intimidated by anything loud or daring" },
+  pippa:    { loves: ["cute", "glam"], hates: ["frumpy"], vain: 0.6, worth: 110, text: "copies whatever Celeste likes, adores anything cute or sparkly, and cares a lot about looking cool" },
+  brenna:   { loves: ["practical", "sporty"], hates: ["glam", "flashy"], vain: 0.05, worth: 30, text: "thinks fussy clothes are for show-offs; respects boots and sleeves you can work in" },
+  juniper:  { loves: ["boho"], hates: ["glam", "flashy"], vain: 0.1, worth: 50, text: "free spirit in flowers and linen; finds glitz and labels soulless and fake" },
+  hesper:   { loves: ["classy", "modest"], hates: ["flashy", "edgy"], vain: 0.3, worth: 140, text: "old-fashioned; expects decent, tidy, proper dress and frowns on anything showy or rebellious" },
+  tansy:    { loves: ["edgy", "classy"], hates: ["frumpy"], vain: 0.4, worth: 120, text: "reads outfits like headlines: what someone wears is a story about who they are trying to be" },
+};
+
 export const PLAYER_LOOK = { skin: "#fbd9c4", hair: "#9a5a3a", hairStyle: "sidebun", outfit: "#f6a37a", accent: "#fff3e6", accessory: "scarf", height: 1.0 };
 
 // Starting feelings. affinity and trust run from -3 to 3.
@@ -176,68 +193,72 @@ const START_REL = [
   ["celeste", "sylvie", -0.5, -0.5, "a sour little thing"],
 ];
 
+// Little things the player can pick up around town and give away. Each woman has one
+// she adores and one she can't stand; Jev decides how a gift actually lands.
+export const ITEMS = {
+  cupcake: { name: "a pink cupcake", icon: "🧁", place: "bakery", where: "Marigold's counter" },
+  flowers: { name: "a bunch of wildflowers", icon: "💐", place: "garden", where: "the garden beds" },
+  cider: { name: "a mug of cider", icon: "🍺", place: "tavern", where: "the Crooked Kettle's tap" },
+  polish: { name: "a bottle of nail polish", icon: "💅", place: "salon", where: "the salon shelf" },
+  trinket: { name: "a shiny trinket", icon: "💎", place: "market", where: "Odette's stall" },
+};
+export const TASTES = {
+  celeste: { loves: "polish", hates: "cider" },
+  odette: { loves: "trinket", hates: "flowers" },
+  wren: { loves: "flowers", hates: "cider" },
+  sylvie: { loves: "trinket", hates: "cupcake" },
+  marigold: { loves: "flowers", hates: "trinket" },
+  pippa: { loves: "cupcake", hates: "polish" },
+  brenna: { loves: "cider", hates: "polish" },
+  juniper: { loves: "trinket", hates: "cupcake" },
+  hesper: { loves: "cupcake", hates: "trinket" },
+  tansy: { loves: "cider", hates: "flowers" },
+};
+
 // Secret pacts at the start of the season. Only members know; the player finds out by listening.
 const START_ALLIANCES = [
   { name: "the Salon Set", members: ["celeste", "tansy"] },
   { name: "the Back Booth", members: ["sylvie", "odette"] },
   { name: "the Garden Girls", members: ["marigold", "juniper"] },
 ];
+// shared by every season: read-only, so one season can't reshape the next
+for (const a of START_ALLIANCES) { Object.freeze(a.members); Object.freeze(a); }
+Object.freeze(START_ALLIANCES);
 
-export function newTown({ playerName = "Rosie" } = {}) {
+// A fresh season. Everything a woman starts with is set here or written as day-0 history
+// (sim.seedHistory), so every belief she holds traces back to an event.
+import { newRel } from "./mind.js";
+export function newTown({ playerName = "Rosie", seed = null } = {}) {
   const people = {};
   for (const v of VILLAGERS) {
     people[v.id] = {
       ...structuredClone(v),
-      location: "home",
-      mood: { anger: 0, fear: 0, cheer: 1 }, // 0..3 each
-      knows: {},      // rumorId -> { conf 0..1, from, day, time }
-      memory: [],     // short lines of what happened to her
-      intent: null,   // a plan: { kind, target, rumor, why, promisedTo, now }
-      votePlan: null, // { target, why, promisedTo }
-      gone: false, out: false, // out: voted out
-      employed: true,
+      location: "home", spot: null,
+      mood: { anger: 0, fear: 0, cheer: 1 }, moodBase: { anger: 0, fear: 0, cheer: 1 },
+      knows: {}, mem: [], summaries: [], goals: [], agenda: [], votePlan: null,
+      gone: false, out: false, employed: true,
     };
   }
   const rel = {};
   const ids = [...Object.keys(people), "player"];
   for (const a of Object.keys(people)) {
     rel[a] = {};
-    for (const b of ids) if (a !== b) rel[a][b] = b === "player" ? { affinity: 0.1, trust: 0, note: "the new girl, a blank slate so far" } : { affinity: 0.3, trust: 0.3, note: "neighbors" };
+    for (const b of ids) if (a !== b) rel[a][b] = b === "player" ? newRel(0.1, 0, "the new girl, a blank slate so far") : newRel(0.3, 0.3, "neighbors");
   }
-  for (const [a, b, af, tr, note] of START_REL) rel[a][b] = { affinity: af, trust: tr, note };
-
-  const rumors = {};
-  let n = 0;
-  for (const v of VILLAGERS) for (const text of v.secrets) {
-    const id = "r" + ++n;
-    rumors[id] = { id, about: v.id, text, origin: "truth", isTrue: true, harm: -1.5, day: 0, time: "08:00", parent: null };
-    people[v.id].knows[id] = { conf: 1, from: "self", day: 0, time: "08:00" };
-  }
-  // A couple of secrets have already leaked.
-  const leak = (about, to, from, conf) => { const r = Object.values(rumors).find((x) => x.about === about); people[to].knows[r.id] = { conf, from, day: 0, time: "08:00" }; };
-  leak("marigold", "odette", "self", 1);
-  leak("marigold", "wren", "odette", 0.6);
-  leak("sylvie", "tansy", "self", 0.7);
-  leak("brenna", "pippa", "self", 0.2);
-
-  const alliances = START_ALLIANCES.map((a, i) => ({ id: "a" + (i + 1), name: a.name, members: [...a.members], day: 0, sincere: Object.fromEntries(a.members.map((m) => [m, true])) }));
-
+  for (const [a, b, af, tr, note] of START_REL) rel[a][b] = newRel(af, tr, note);
   return {
-    version: 2,
-    day: 1, minute: 8 * 60,
-    people, rel, rumors, nextRumor: n + 1,
-    alliances, nextAlliance: alliances.length + 1,
-    votes: [],        // past vote results
+    version: 3,
+    seed: seed ?? String(Math.floor(Math.random() * 1e9)),
+    day: 1, minute: 8 * 60, phase: "day",
+    people, rel, rumors: {}, nextRumor: 1,
+    alliances: [], world: [], decisions: [], trace: [], ledger: [], moves: [], talks: {}, lies: [], secrets: {},
+    votes: [], notes: [], shows: [],
     player: {
-      name: playerName, location: "plaza", talkingTo: null,
-      heard: [],      // { rid, from, how: "told"|"overheard"|"saw", day, time }
-      told: [],       // { rid, to, day, time, believed: null|true|false }
-      promises: [],   // what villagers told the player they would do { by, kind, target, day, sincere }
-      seen: {},       // pair -> last outcome seen
-      outVotes: [],
+      name: playerName, location: "plaza", pos: null, talkingTo: null,
+      mem: [], summaries: [], knows: {}, heard: [], told: [],
+      carrying: null, fights: 0, snooped: {},
     },
-    events: [],       // { day, time, place, text, witnesses }
-    log: [],          // headline feed for the tracker
-    over: null,       // null | { won: bool, reason }
+    over: null,
   };
 }
+export { START_REL, START_ALLIANCES };

@@ -1,6 +1,8 @@
 // The screen furniture: HUD, hints, headlines, first-time tips, and the cards between days.
 
-import { SHOW } from "../core/cast.js";
+import { SHOW, ITEMS, PLACES } from "../core/cast.js";
+import { FORMATS } from "../core/events.js";
+import * as audio from "./audio.js";
 
 const $ = (id) => document.getElementById(id);
 export { $ };
@@ -11,6 +13,7 @@ export function showHud(on) { $("hud").classList.toggle("hidden", !on); }
 
 export function updateHud(s, placeName) {
   $("hud-day").textContent = s.day;
+  $("hud-coins").textContent = s.player.coins ?? 0;
   const m = Math.min(s.minute, 20 * 60);
   $("hud-time").textContent = `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
   $("hud-bar").style.width = `${((m - 480) / 720) * 100}%`;
@@ -19,6 +22,14 @@ export function updateHud(s, placeName) {
   $("hud-vote").textContent = d === 0 ? (m >= 19 * 60 ? "To the firepit!" : "Vote TONIGHT") : `Vote in ${d} day${d > 1 ? "s" : ""}`;
   pill.classList.toggle("tonight", d === 0);
   $("placepill").textContent = placeName;
+  const ev = s.event && s.event.day === s.day && !s.event.done ? s.event : null;
+  const sp = $("showpill");
+  sp.classList.toggle("hidden", !ev);
+  if (ev) { const f = FORMATS[ev.format]; const t = `${f.icon} ${f.title} · ${PLACES[ev.place].short} · ${String(Math.floor(ev.minute / 60)).padStart(2, "0")}:${String(ev.minute % 60).padStart(2, "0")}`; if (sp.textContent !== t) sp.textContent = t; sp.classList.toggle("soon", s.minute >= ev.minute - 30); }
+  const it = s.player.carrying && ITEMS[s.player.carrying];
+  const cp = $("carrypill");
+  cp.classList.toggle("hidden", !it);
+  if (it && cp.dataset.item !== s.player.carrying) { cp.dataset.item = s.player.carrying; cp.textContent = `${it.icon} Carrying ${it.name}`; }
 }
 
 export function setBrain(jevStatus, voiceStatus) {
@@ -38,6 +49,7 @@ export function hint(html) {
 
 let toastT = null;
 export function toast(text) {
+  audio.sfx(/^☕/.test(text) ? "tea" : "toast");
   const t = $("toast");
   t.textContent = text;
   t.classList.add("show");
@@ -48,8 +60,8 @@ export function toast(text) {
 // ---------- headlines (lower-third chyron) ----------
 
 const queue = [];
-let showing = false;
-const TAGS = { drama: "Drama", bad: "Uh oh", vote: "The Vote", good: "Nice", info: "Meanwhile", tea: "Fresh tea" };
+let showing = false, lastDrama = -1e9;
+const TAGS = { drama: "Drama", bad: "Uh oh", vote: "The Vote", good: "Nice", info: "Meanwhile", tea: "Fresh tea", show: "Showtime" };
 export function chyron(text, kind = "drama") {
   queue.push({ text, kind });
   if (queue.length > 4) queue.shift();
@@ -60,6 +72,9 @@ function next() {
   const c = $("chyron");
   if (!item) { showing = false; return; }
   showing = true;
+  // each kind of headline has its own sound
+  if (item.kind === "drama" && performance.now() - lastDrama > 25000) { lastDrama = performance.now(); audio.sting("drama"); } else if (item.kind === "drama") audio.sfx("toast"); else if (item.kind === "bad") audio.sting("bad"); else if (item.kind === "good") audio.sting("good");
+  else if (item.kind === "show") audio.sfx("handbell", { gain: 0.5 }); else audio.sfx("toast");
   c.className = item.kind;
   c.querySelector(".ctag").textContent = TAGS[item.kind] || "Drama";
   c.querySelector(".ctext").textContent = item.text;
@@ -70,6 +85,7 @@ function next() {
 // ---------- first-time tips ----------
 
 export const TIPS = {
+  looks: { icon: "👗", title: "They're judging your outfit", text: "Every woman has her own taste. What you wear changes how they feel about you, what they gossip about, and how they vote. Change your look at the clothes rack outside the salon; the producers add coins to your purse every morning." },
   welcome: { icon: "🚶‍♀️", title: "Welcome to Gossiptown", text: "Walk with <kbd>W A S D</kbd> or the arrow keys. Walk up to anyone and press <kbd>Enter</kbd> to talk. <kbd>Tab</kbd> opens your Gossip Board, <kbd>P</kbd> pauses." },
   talk: { icon: "💬", title: "Just say it", text: "Type anything and press <kbd>Enter</kbd>. She reacts to what you actually say: ask questions, flatter her, spill (or invent) gossip, propose a secret pact, or ask her to vote someone out. Empty <kbd>Enter</kbd> or walking away ends the chat." },
   overheard: { icon: "👂", title: "Eavesdropping", text: "Stand close to hear every word. From further away you only catch pieces. Get too close and they might catch you." },
@@ -83,8 +99,13 @@ export const TIPS = {
   bell: { icon: "🔔", title: "The bell rings!", text: "Tonight is a vote. Everyone heads to the firepit at sundown. Last chance to lock in your pacts." },
   vote: { icon: "🔥", title: "Cast your vote", text: "Walk up to the woman you want gone (or click her card) and press <kbd>Enter</kbd>, then <kbd>Enter</kbd> again to lock it in. The votes are read out one by one." },
   night: { icon: "🌙", title: "Overnight", text: "Every night each woman lies awake and makes up her mind: grudges, quitting, making peace, who has to go. You hear about the public stuff by morning." },
-  tracker: { icon: "📌", title: "Your Gossip Board", text: "<b>The Tea</b>: everything you've heard. <b>My Rumors</b>: what you started and how far it spread. <b>Pacts</b>: who promised you what. <b>The Cast</b>: how each woman feels about you." },
-  fight: { icon: "💢", title: "A fight!", text: "Everyone who saw it will be talking about it. Fights make enemies, and enemies make votes." },
+  tracker: { icon: "📌", title: "Your Gossip Board", text: "<b>The Tea</b>: everything you've heard. <b>My Rumors</b>: what you started and how far it spread. <b>Pacts</b>: who promised you what, what you promised, and who kept her word. <b>The Cast</b>: how each woman feels about you." },
+  fight: { icon: "💢", title: "A cat fight!", text: "Everyone who saw it picks a side, and it'll be all over town by tonight. Whoever starts fights gets remembered at the vote." },
+  "fight-you": { icon: "💥", title: "She's coming for you!", text: "Mash <kbd>Enter</kbd> to hold your own, or walk away to back down. Win and she'll be scared of you. Lose and the whole town hears about it. Either way, whoever started it pays at the vote." },
+  gift: { icon: "🎁", title: "A little something", text: "You're carrying a gift. Talk to someone and hand it over (\"I brought you this\"). Every woman has one thing she adores and one she can't stand. Some will wonder what you want for it." },
+  snoop: { icon: "📬", title: "Snooping", text: "The first peek in a woman's mailbox can turn up her secret. Anyone nearby might see you, and if she's home she might be watching from the window." },
+  show: { icon: "🎤", title: "Primrose's show", text: "Every day Primrose runs a different show somewhere in town, and everyone has to come. When it's your turn, type what you say in front of the whole crowd. Every woman listening decides whether she loves it or holds it against you, and they remember." },
+  note: { icon: "📌", title: "An anonymous note", text: "Your note stays up for two days. Anyone passing the square or the market may read it. Nosy ones (and anyone you've told the same story to) may work out you wrote it." },
 };
 
 const seenKey = "gossiptown.tips.v1";
@@ -110,6 +131,7 @@ function showNextTip() {
   el.querySelector("p").innerHTML = t.text;
   el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop");
   el.classList.add("show");
+  audio.sfx("tip");
   window.dispatchEvent(new Event("tip-opened"));
 }
 export function dismissTip() {

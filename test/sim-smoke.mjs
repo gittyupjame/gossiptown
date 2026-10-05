@@ -14,6 +14,14 @@ const ui = {
 };
 let phase = null;
 ui.voteNight = () => (phase = "vote");
+// Primrose's show, played without a page: every woman takes her turn, you pass
+const E = await import("../src/core/events.js");
+ui.showStart = async (s) => {
+  const lu = await E.lineup(s);
+  const acts = lu.seat ? (lu.seat === "player" ? [] : [await E.seatAnswer(s, lu.seat, lu.rumor)]) : await Promise.all(lu.order.filter((id) => id !== "player").map((id) => E.npcAct(s, id, { assigned: lu.assigned[id] })));
+  for (const a of acts) { const r = await E.crowdReacts(s, a, ui); events.push(`SHOW ${E.FORMATS[s.event.format].title}: ${sim.firstOf(s, a.by)} ${E.actText(s, a)} -> ${JSON.stringify(r.tally)}`); }
+  g.endShow();
+};
 ui.nightDone = (s, lines) => { phase = "nightdone"; events.push("NIGHT " + lines.join("; ")); };
 const g = createGame(ui, { daySeconds: 60 });
 g.newSeason("Rosie");
