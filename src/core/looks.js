@@ -1,14 +1,20 @@
 // How you look, and what the women make of it. Code describes the outfit in words and
 // keeps the books (coins, what you own); Jev decides how each woman sizes it up, whether
 // she talks about it, and whether it makes you a threat. Those verdicts then sit in every
-// later Jev state about you (see sim.feelings), so a look keeps mattering all season.
+// later Jev state about you (views.personLine), so a look keeps mattering all season.
+// Every judgment starts from her seeing you (an outfit event she perceived).
 
-import * as jev from "./jev.js";
 import * as voice from "./voice.js";
+import * as R from "./record.js";
+import * as M from "./mind.js";
+import * as B from "./beliefs.js";
 import { FASHION } from "./cast.js";
 import * as W from "./wardrobe.js";
-import { alive, first, remember, newRumor, learn, persona, feelings, clock } from "./sim.js";
-import { shift } from "./mind.js";
+import { alive } from "./agents.js";
+import { view } from "./views.js";
+import { dist, perceive, pos } from "./space.js";
+
+const first = (v) => v.name.split(" ")[0];
 
 export const VERDICTS = ["hideous", "tacky", "plain", "cute", "stunning"];
 const REACTIONS = {
@@ -99,7 +105,7 @@ export function opinionText(s, id) {
 
 // ---------- sizing her up ----------
 
-export async function judge(s, v, ui, { where = "in town" } = {}) {
+export async function judge(s, v, ui, { where = "in town", ev = null } = {}) {
   const F = FASHION[v.id] || { loves: [], hates: [], vain: 0.3, worth: 80, text: "has ordinary taste" };
   const o = s.player.outfit, key = W.outfitKey(o);
   const tags = W.tagsOf(o), cost = W.outfitCost(o);
@@ -109,92 +115,59 @@ export async function judge(s, v, ui, { where = "in town" } = {}) {
   const money = v.id === "odette" || v.id === "celeste" ? (cost - 80) / 90 : 0;
   const prior = Math.max(0, Math.min(4, 2 + fit * 0.35 + money));
   const outshines = cost > F.worth && prior >= 2.5;
-  const r = s.rel[v.id].player;
-  const j = await jev.ask({
-    ...persona(s, v),
-    her_taste_in_clothes: F.text,
-    her_own_look: `${v.name} usually wears an outfit worth about ${F.worth} coins`,
-    newcomer_look: lookText(s),
-    ...(prevRec ? { what_she_thought_before: `${opinionText(s, v.id)}` } : {}),
-    on_newcomer: feelings(s, v, "player"),
-    where,
-  }, {
+  // she sees it: an event in her memory
+  ev ??= R.emit(s, { type: "outfit", actor: "player", perceivers: [{ id: v.id, how: "saw" }], content: { look: W.itemsText(o), key }, cause: "player:outfit" });
+  const a = await R.decide(s, v.id, view(s, v.id, { with: ["player"], small: true, extra: { clothes: true, fields: { her_own_look: `you usually wear an outfit worth about ${F.worth} coins`, newcomer_look: lookText(s), ...(prevRec ? { what_you_thought_before: opinionText(s, v.id) } : {}) } }, moment: `You get a good look at ${s.player.name}'s outfit (${where}).` }), {
     verdict: { type: "score", instructions: `${first(v)} gets a good look at ${s.player.name}'s outfit. Judged by ${first(v)}'s own taste, how does it look to her?`, criteria: ["Hideous", "Tacky", "Plain", "Cute", "Stunning"], prior },
     reaction: { type: "choice", instructions: `How does ${first(v)} react to ${s.player.name}'s look?`, criteria: REACTIONS,
       prior: { admires: Math.max(0.02, prior - 2.4) ** 1.5 * 2.5, approves: 0.2 + Math.max(0, prior - 1.8), shrugs: 1.6 - F.vain * 1.2, sneers: Math.max(0.02, 2.2 - prior) * (0.8 + F.vain), envious: outshines ? F.vain * 3 : 0.05, copycat: twin?.id === v.id ? 6 : 0.02, suspicious: cost >= 150 ? 0.4 + v.bias.nosy * 0.6 + (v.id === "odette" ? 1.5 : 0) : 0.05 } },
     gossip: { type: "noul", instructions: `${first(v)} talks about ${s.player.name}'s outfit behind her back.`, prior: Math.min(0.85, 0.08 + v.bias.gossip * 0.3 + F.vain * 0.25 + Math.abs(prior - 2) * 0.08) },
     threat: { type: "noul", instructions: `Seeing how ${s.player.name} looks, ${first(v)} decides she is a real threat to win the show: everybody notices her.`, prior: Math.min(0.7, prior >= 3 ? 0.05 + F.vain * 0.25 + v.bias.scheme * 0.2 : 0.02) },
-  }, `look:${v.id}`);
-  const verdict = j.verdict.value, reaction = j.reaction.pick;
-  // a woman who doesn't care about clothes doesn't change her mind much over them
+  }, `look:${v.id}`, ev.id, (j) => `thought ${s.player.name}'s look was ${VERDICTS[Math.round(j.verdict.value)]}${j.reaction.pick === "shrugs" ? "" : ` (${REACTIONS[j.reaction.pick].toLowerCase()})`}`);
+  const verdict = a.verdict.value, reaction = a.reaction.pick;
   let d = (verdict - 2) * 0.3 * (0.4 + F.vain);
   d += { admires: 0.3, approves: 0.1, shrugs: 0, sneers: -0.3, envious: -0.5, copycat: -0.8, suspicious: 0 }[reaction] ?? 0;
-  if (prevRec?.key === key) d *= 0.3; // she has seen it before
-  shift(s, v.id, "player", { aff: d, trust: reaction === "suspicious" ? -0.3 : 0, why: Math.abs(d) >= 0.3 ? `her look (${W.standout(o)}): ${reaction === "shrugs" ? VERDICTS[Math.round(verdict)] : REACTIONS[reaction].toLowerCase()}` : null });
+  if (prevRec?.key === key) d *= 0.3;
   const item = W.standout(o);
-  const rec = { key, verdict, reaction, threat: j.threat.yes, day: s.day, time: clock(s.minute), said: false, item };
+  M.shift(s, v.id, "player", { aff: d, trust: reaction === "suspicious" ? -0.3 : 0, why: Math.abs(d) >= 0.3 ? `her look (${item}): ${reaction === "shrugs" ? VERDICTS[Math.round(verdict)] : REACTIONS[reaction].toLowerCase()}` : null, cause: a._id });
+  // how the newcomer looked to her: seen only if the newcomer could see her face
+  const seen = perceive(s, "player", pos(s, v.id), {});
+  const rec = { key, verdict, reaction, threat: a.threat.yes, day: s.day, time: M.clock(s.minute), said: false, item, decision: a._id, ev: ev.id, seenByPlayer: !!seen && reaction !== "shrugs" };
   s.looks[v.id] = rec;
-  remember(v, s, `sized up ${s.player.name}'s look (${item}): ${VERDICTS[Math.round(verdict)]}${reaction === "shrugs" ? "" : `, ${REACTIONS[reaction].toLowerCase()}`}`);
-  if (j.threat.yes) remember(v, s, `decided ${s.player.name} is a threat: everybody notices her`, 2);
-  let rid = null;
-  if (j.gossip.yes && reaction !== "shrugs") {
-    const P = s.player.name, Fn = first(v);
-    const text = {
-      admires: `${Fn} says ${P}'s ${item} is the best thing she's seen in this town.`,
-      approves: `${Fn} thinks ${P} has lovely taste.`,
-      sneers: `${Fn} says ${P}'s ${item} looks ${verdict < 1.5 ? "hideous" : "cheap and tacky"}.`,
-      envious: `${Fn} is telling everyone ${P} is trying way too hard with that ${item}.`,
-      copycat: `${Fn} says ${P} is copying her look, right down to the hair.`,
-      suspicious: `${Fn} wants to know how the new girl paid for that ${item}.`,
-    }[reaction];
-    const harm = { admires: 1, approves: 0.5, sneers: -1, envious: -1, copycat: -1.2, suspicious: -0.8 }[reaction];
-    rid = newRumor(s, { about: "player", text, origin: v.id, isTrue: true, harm, kind: "look" });
-    learn(s, v, rid, 1, "self");
+  M.note(s, v.id, `thought ${s.player.name}'s look (${item}) was ${VERDICTS[Math.round(verdict)]}${reaction === "shrugs" ? "" : `; ${REACTIONS[reaction].toLowerCase()}`}`, { w: a.threat.yes ? 2 : 1, cause: a._id, about: ["player"] });
+  if (a.gossip.yes && reaction !== "shrugs") {
+    const text = `${first(v)} thinks ${s.player.name}'s ${item} looks ${VERDICTS[Math.round(verdict)]}${reaction === "copycat" ? " and that she's copying her" : reaction === "suspicious" ? " and wonders how she paid for it" : reaction === "envious" ? " and that she's trying too hard" : ""}.`;
+    const rid = B.newClaim(s, { about: "player", text, origin: v.id, isTrue: true, harm: verdict >= 2.6 ? 0.5 : -0.8, kind: "look", cat: "trait", prop: { subject: "player", pred: "looks", obj: null, pol: 1 } });
+    B.learn(s, v.id, rid, { conf: 1, from: "self", ev: ev.id, root: "saw", how: "saw", cause: a._id });
+    M.pushAgenda(s, v, { kind: "spread", target: null, rumor: rid, cause: { type: "decision", id: a._id } });
   }
-  ui.emote?.(v.id, EMOTE[reaction]);
-  ui.lookJudged?.(v, rec, rid);
+  if (rec.seenByPlayer) ui?.emote?.(v.id, EMOTE[reaction]);
+  ui?.lookJudged?.(v, rec);
   return rec;
 }
 
-// Each tick, women close enough to see a new outfit size it up (a few at a time).
-export async function notice(s, ui, { max = 3, range = 9 } = {}) {
-  if (!s.player.outfit || !s.player.debuted || s.player.out || !ui.distance) return [];
+// Women who can see the newcomer in a look they haven't judged yet size it up (a few at a time).
+export async function notice(s, ui, { max = 3, range = 12 } = {}) {
+  if (!s.player.outfit || !s.player.debuted || s.player.out) return [];
   const key = W.outfitKey(s.player.outfit);
-  const who = alive(s).filter((v) => s.looks[v.id]?.key !== key && !v.judging && ui.distance(v) < range).slice(0, max);
+  const who = alive(s).filter((v) => s.looks[v.id]?.key !== key && !v.judging && v.location !== "home" && dist(s, v.id, "player") < range).slice(0, max);
   for (const v of who) v.judging = true;
   try { return await Promise.all(who.map((v) => judge(s, v, ui))); }
   finally { for (const v of who) v.judging = false; }
 }
 
-// Everyone at once (the welcome party).
-export async function judgeAll(s, ui, opts) {
+// Everyone at once (the welcome party): one public event, everyone judges.
+export async function judgeAll(s, ui, opts = {}) {
   s.player.debuted = true;
-  return Promise.all(alive(s).map((v) => judge(s, v, ui, opts)));
+  const vs = alive(s);
+  const ev = R.emit(s, { type: "outfit", actor: "player", perceivers: vs.map((v) => ({ id: v.id, how: "saw" })), content: { look: W.itemsText(s.player.outfit), key: W.outfitKey(s.player.outfit) }, cause: "player:debut" });
+  return Promise.all(vs.map((v) => judge(s, v, ui, { ...opts, ev })));
 }
 
-// a quick remark she'd make out loud when she first clocks it (no Claude call, it's instant)
-export function remark(s, v, rec) {
-  const it = rec.item, P = s.player.name;
-  const pick = (a) => a[Math.floor(Math.random() * a.length)];
-  return {
-    admires: pick([`Oh! That ${it}!`, `${P}, you look divine.`, `Now THAT is an entrance.`]),
-    approves: pick([`Cute ${it}.`, `Not bad, new girl.`, `Somebody has taste.`]),
-    shrugs: pick([`Hm.`, `Welcome, I suppose.`, `Nice to meet you.`]),
-    sneers: pick([`Is that a ${it}? Bold.`, `Did she get dressed in the dark?`, `Oh, sweetie. No.`]),
-    envious: pick([`Well. Somebody's trying hard.`, `Must be nice.`, `Who does she think she is?`]),
-    copycat: pick([`Excuse me, is she wearing MY look?`, `Copycat.`, `Flattering. And creepy.`]),
-    suspicious: pick([`And how did she pay for THAT?`, `That ${it} cost a fortune.`, `New money, hm?`]),
-  }[rec.reaction];
-}
-
-// for the HUD: a cue, never numbers
+// for the HUD: only what the newcomer saw on her face
 export function lookCue(s, id) {
   const r = s.looks?.[id];
-  if (!r) return null;
-  if (r.key !== W.outfitKey(s.player.outfit)) return "hasn't seen your new look";
-  if (r.reaction === "copycat") return "thinks you copied her";
-  if (r.reaction === "envious") return "is jealous of your look";
-  if (r.reaction === "suspicious") return "wonders how you paid for it";
-  return { 0: "thinks you look hideous", 1: "thinks you look tacky", 2: "thinks you look plain", 3: "likes your look", 4: "loves your look" }[Math.round(r.verdict)];
+  if (!r || !r.seenByPlayer) return null;
+  if (r.key !== W.outfitKey(s.player.outfit)) return null;
+  return { admires: "lit up at your look", approves: "nodded at your look", sneers: "sneered at your look", envious: "looked jealous of your outfit", copycat: "glared at you like you copied her", suspicious: "eyed your outfit suspiciously" }[r.reaction] || null;
 }
-

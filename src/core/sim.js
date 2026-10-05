@@ -1,1296 +1,781 @@
-// The living town. Every decision a cast member makes goes through Jev; code keeps the
-// numbers, applies the results, and remembers everything.
+// The living town: the clock and the systems that run on the shared record. Every mechanic
+// here (talking to the newcomer, gifts, snooping, the Whisper board, cat fights, the vote)
+// is just another way to put events into the world log and moves into the record; the
+// women judge them through Jev (react.js), and code commits what they decide.
 //
 // The sim talks to the page through `ui` hooks (all optional):
-//   moved(v)                      her destination changed
-//   pair(a, b, place)             two women stop to talk; b walks over to a
-//   hearing(a, b)                 "full" | "part" | "none": how much the player hears
-//   distance(v)                   metres from the player
-//   exchange({ a, b, lines, full }) play an overheard conversation as speech bubbles
-//   headline(text, kind)          something happened that the player sees
-//   emote(id, symbol)             a little symbol over someone's head
-//   approach(v, line, purpose)    she walks up to the player and starts talking
-//   first(kind, data)             something happened for the first time (for tips)
+//   moved(v) / arrived(v)          she set off / got somewhere (v.dest, v.spot)
+//   pair(a, b)                     two people stop to talk; b walks over to a
+//   exchange({ a, b, lines, full }) a line the newcomer overheard, already committed
+//   toPlayer({ talk, by, text })   a woman said something to the newcomer (committed)
+//   fightPlayer(id, by)            a cat fight with the newcomer: the page plays it
+//   fight(a, b, { winner })        a cat fight between two women in view
+//   emote(id, symbol)              a visible reaction over someone's head
+//   gift(id, how)                  how a gift landed, on her face
+//   heard()                        the newcomer learned something new
+//   first(kind)                    something happened for the first time (tips)
 
-import * as jev from "./jev.js";
-import * as voice from "./voice.js";
-import { PLACES, SHOW, ITEMS, TASTES, FASHION } from "./cast.js";
-import { opinionText, lookText } from "./looks.js";
-import { outfitKey } from "./wardrobe.js";
+import * as R from "./record.js";
 import * as M from "./mind.js";
+import * as B from "./beliefs.js";
+import * as T from "./talk.js";
+import * as A from "./agents.js";
+import * as voice from "./voice.js";
+import * as runtime from "./runtime.js";
+import * as rng from "./rng.js";
+import * as jev from "./jev.js";
+import { view, placeName as placeNameV, inSight } from "./views.js";
+import { check, register, grounded } from "./moves.js";
+import { round, fanOut, settleClaim, deliveryText } from "./react.js";
+import { PLACES, SHOW, ITEMS, TASTES, VILLAGERS, START_REL, START_ALLIANCES } from "./cast.js";
+import { pos, dist, locOf, centre } from "./space.js";
+import { mailbox, BOARD_STAND, placeAt } from "../client/layout.js";
 export { deedText } from "./mind.js";
-import { read as readLine, weigh, readDeed, overlap } from "./reading.js";
 
-// ---------- small helpers ----------
+const nm = M.nm;
 
-export const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-export const first = (v) => v.name.split(" ")[0];
-export const clamp = (x, lo = -3, hi = 3) => Math.max(lo, Math.min(hi, x));
-const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
-
-export const alive = (s) => Object.values(s.people).filter((v) => !v.gone);
-export const at = (s, place) => alive(s).filter((v) => v.location === place);
-export const nameOf = (s, id) => (id === "player" ? s.player.name : id === "board" ? "an anonymous note" : s.people[id] ? s.people[id].name : id || "someone");
-export const firstOf = (s, id) => (id === "player" ? s.player.name : s.people[id] ? first(s.people[id]) : id || "someone");
+// ---------- small helpers the page uses ----------
+export const clock = M.clock;
+export const alive = A.alive;
+export const placeName = placeNameV;
+export const nameOf = (s, id) => (id === "player" ? s.player.name : id === "primrose" ? "Primrose" : id === "board" ? "an anonymous note" : s.people[id] ? s.people[id].name : id || "someone");
+export const firstOf = (s, id) => nm(s, id);
 export const daysToVote = (s) => (SHOW.voteEvery - (s.day % SHOW.voteEvery)) % SHOW.voteEvery;
 export const isVoteDay = (s) => daysToVote(s) === 0;
-
-const FEEL = ["hates", "dislikes", "is cool toward", "is neutral about", "likes", "is fond of", "adores"];
-const TRUST = ["completely distrusts", "distrusts", "doubts", "is unsure about", "mostly trusts", "trusts", "trusts completely"];
-export const feel = (x) => FEEL[Math.round(clamp(x) + 3)];
-export const trust = (x) => TRUST[Math.round(clamp(x) + 3)];
-export const moodText = (m) => [m.anger >= 2 ? "furious" : m.anger >= 1 ? "irritated" : null, m.fear >= 2 ? "scared" : m.fear >= 1 ? "uneasy" : null, m.cheer >= 2 ? "cheerful" : m.cheer <= 0 ? "glum" : null].filter(Boolean).join(", ") || "calm";
-
-function nature(v) {
-  const b = v.bias, out = [];
-  if (b.gossip > 0.7) out.push("can't resist passing on gossip"); else if (b.gossip < 0.3) out.push("rarely gossips");
-  if (b.deceit > 0.7) out.push("lies easily and well"); else if (b.deceit < 0.3) out.push("hates lying");
-  if (b.loyalty > 0.75) out.push("fiercely loyal to her allies"); else if (b.loyalty < 0.4) out.push("drops allies the moment it suits her");
-  if (b.temper > 0.7) out.push("explosive temper"); else if (b.temper < 0.25) out.push("avoids fights");
-  if (b.scheme > 0.75) out.push("plays the game ruthlessly"); else if (b.scheme < 0.3) out.push("doesn't really play the game");
-  if (b.nosy > 0.75) out.push("pries into everything");
-  if (b.social > 0.8) out.push("always looking for company"); else if (b.social < 0.4) out.push("likes being left alone");
-  return out.join(", ");
-}
-
-// importance: 1 everyday, 2 notable, 3 never forgotten (see mind.js)
-export function remember(v, s, text, importance = 1) { M.remember(v, s, text, importance); }
-
-export function headline(s, text, kind, ui, { place, witnessed = true } = {}) {
-  s.log.push({ day: s.day, time: clock(s.minute), text, kind });
-  if (s.log.length > 200) s.log.splice(0, s.log.length - 200);
-  if (place) s.events.push({ day: s.day, time: clock(s.minute), place, text, witnesses: at(s, place).map((v) => v.id) });
-  if (witnessed) ui.headline?.(text, kind);
-}
-
-export function newRumor(s, { about, text, origin, isTrue = null, harm = 0, parent = null, kind = "gossip", target }) {
-  const id = "r" + s.nextRumor++;
-  s.rumors[id] = { id, about, text, origin, isTrue, harm, parent, kind, day: s.day, time: clock(s.minute), ...(target ? { target } : {}) };
-  return id;
-}
-
-export function learn(s, v, rumorId, conf, from) {
-  const { before, after } = M.hear(s, v, rumorId, conf, from);
-  // believing bad news about someone changes how you feel about them
-  const r = s.rumors[rumorId];
-  if (r.about && r.about !== v.id && after > before) {
-    const delta = (r.harm / 2) * (after - before);
-    M.shift(s, v.id, r.about, { aff: delta, trust: delta * 0.6, why: `heard: ${short(r.text)}` });
-  }
-}
-export const short = (t, n = 70) => (t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : t);
-
-// The player hears a story. Kept for the rumor tracker.
-export function playerHears(s, rid, from, how, ui) {
-  if (!rid || !s.rumors[rid]) return;
-  if (s.player.heard.some((h) => h.rid === rid)) return;
-  s.player.heard.push({ rid, from, how, day: s.day, time: clock(s.minute) });
-  ui.first?.("rumor", { rid });
-  ui.heard?.(rid);
-}
-
-function knowledge(s, v, max = 6) {
-  return Object.entries(v.knows)
-    .filter(([, k]) => k.conf >= 0.3)
-    .sort((p, q) => q[1].conf - p[1].conf)
-    .slice(0, max)
-    .map(([id, k]) => `${s.rumors[id].text} (${k.conf >= 0.8 ? "sure" : k.conf >= 0.5 ? "believes" : "half-believes"}; ${k.from === "self" ? "knows first-hand" : `heard from ${nameOf(s, k.from)}`})`);
-}
-
+export const feel = M.feel;
 export const alliancesOf = (s, id) => s.alliances.filter((a) => a.members.includes(id) && a.members.filter((m) => m === "player" || !s.people[m]?.gone).length >= 2);
+const present = (s, id) => (id === "player" ? !s.player.out : !!s.people[id] && !s.people[id].gone);
+const short = (t, n = 70) => (String(t).length > n ? String(t).slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : String(t));
 
-function allianceLines(s, v) {
-  return alliancesOf(s, v.id).map((a) => {
-    const others = a.members.filter((m) => m !== v.id && (m === "player" || !s.people[m].gone)).map((m) => nameOf(s, m));
-    return `secret pact "${a.name}" with ${others.join(" and ")}${a.sincere[v.id] ? "" : " (she is only pretending)"}`;
-  });
-}
-
-export function showText(s) {
-  const d = daysToVote(s);
-  const left = alive(s).length + (s.player.out ? 0 : 1);
-  return `Day ${s.day} of a reality show. ${left} women left. ${d === 0 ? "The vote is TONIGHT at the firepit." : `The next vote is in ${d} day${d > 1 ? "s" : ""}.`} At every vote the town votes one woman out. Everyone wants to be the last one standing.`;
-}
-
-export function persona(s, v) {
-  return {
-    who: `${v.name}, the ${v.employed ? v.job : `out-of-work ${v.job}`} (${v.archetype})`,
-    personality: v.traits.join(", "),
-    ...(FASHION[v.id] ? { taste_in_clothes: FASHION[v.id].text } : {}),
-    nature: nature(v),
-    mood: moodText(v.mood) + (v.mood.why ? ` (because ${v.mood.why})` : ""),
-    where: placeName(v.location),
-    works_at: PLACES[v.work]?.name,
-    plan: planText(s, v.intent),
-    ...(v.plans?.length ? { also_means_to: v.plans.map((p) => planText(s, p)) } : {}),
-    vote_plan: M.votePlanText(s, v),
-    ...(threatList(s, v).length ? { thinks_coming_for_her: threatList(s, v) } : {}),
-    alliances: allianceLines(s, v),
-    ...(M.commitmentsText(s, v.id).length ? { promises: M.commitmentsText(s, v.id) } : {}),
-    the_show: showText(s),
-    knows: knowledge(s, v),
-    recent: v.memory.slice(-6),
-    never_forgets: M.lasting(v),
-  };
-}
-const threatList = (s, v) => [...M.threatsTo(s, v).values()];
-
-export function feelings(s, a, b) {
-  const id = b === "player" ? "player" : b.id;
-  const r = s.rel[a.id][id];
-  const look = id === "player" ? opinionText(s, a.id) : null;
-  const why = M.reasonsText(s, r);
-  return `${first(a)} ${feel(r.affinity)} ${nameOf(s, id)} and ${trust(r.trust)} her (${r.note}${why ? `; lately: ${why}` : ""})${look ? `; ${look}` : ""}`;
-}
-
-const candidatesFor = (s, v) => [...alive(s).filter((o) => o.id !== v.id).map((o) => o.id), ...(s.player.out ? [] : ["player"])];
-
-// How dangerous someone is to keep around: well liked people win these shows.
-export function popularity(s, id) {
-  const vs = alive(s).filter((v) => v.id !== id);
-  return vs.reduce((t, v) => t + s.rel[v.id][id].affinity, 0) / Math.max(1, vs.length);
-}
-
-// ---------- plans ----------
-// A plan is something a cast member has decided to do: { kind, target, rumor, why, promisedTo, now }.
-// The plan is in every later Jev state for her until she carries it out.
-
-export const placeName = (loc) => PLACES[loc]?.name || (loc === "home" ? "her cottage" : "the lane");
-
-export function planText(s, it) {
-  if (!it) return "nothing in particular";
-  const who = nameOf(s, it.target);
-  const r = it.rumor && s.rumors[it.rumor] ? `"${s.rumors[it.rumor].text}"` : "";
-  const text = {
-    ask: `ask ${who} whether this is true: ${r}`,
-    confront: `confront ${who}${r ? ` about: ${r}` : ""}`,
-    warn: `warn ${who} what people are saying: ${r}`,
-    report: `take this to Hesper: ${r}`,
-    spread: `pass this on to someone: ${r}`,
-    make_peace: `make peace with ${who}`,
-    recruit: `ask ${who} to team up for the vote`,
-    lobby: `get ${who} to vote out ${nameOf(s, it.voteTarget)}`,
-    talk: `go and talk to ${who}`,
-  }[it.kind] || `${it.kind.replace(/_/g, " ")} ${it.target ? who : ""}`.trim();
-  return text + (it.why ? ` (because ${it.why})` : "");
-}
-
-export function setPlan(s, v, plan) {
-  if (plan.target === v.id) return;
-  if (plan.kind === "report") plan.target = "hesper";
-  if (plan.target === "hesper" && (v.id === "hesper" || s.people.hesper?.gone)) return;
-  // telling someone you'll do it goes in the book
-  if (plan.promisedTo && !plan.commit) plan.commit = M.commit(s, { by: v.id, to: plan.promisedTo, kind: plan.kind, target: plan.target, rumor: plan.rumor, what: plan.said || null, sincere: plan.sincere ?? true }).id;
-  if (!M.queuePlan(s, v, plan)) {
-    const had = [v.intent, ...(v.plans || [])].find((p) => p && p.kind === plan.kind && p.target === plan.target);
-    if (had && plan.commit && !had.commit) { had.commit = plan.commit; had.promisedTo = plan.promisedTo; }
-    return;
+// What the newcomer can read off a woman: only the tone of what she has said to her face
+// and the reactions she has seen, never the numbers in her head.
+export function vibe(s, id) {
+  const mine = (s.player.mem || []).filter((m) => m.ev && m.about?.includes(id)).slice(-12);
+  let score = 0, n = 0;
+  for (const m of mine) {
+    const ev = R.evById(s, m.ev);
+    if (!ev || ev.actor !== id) continue;
+    if (ev.type === "line" && ev.targets.includes("player")) { score += { warm: 1, friendly: 0.7, "sweet-but-fake": 0, neutral: 0, guarded: -0.4, cool: -0.7, hostile: -1.2, nervous: 0 }[ev.content.tone] ?? 0; n++; }
+    if (ev.type === "outburst" && ev.targets.includes("player")) { score -= 1; n++; }
+    if (ev.type === "fight" && (ev.targets.includes("player") || ev.actor === "player")) { score -= 1.5; n++; }
   }
-  remember(v, s, `decided to ${planText(s, plan)}${plan.promisedTo ? `, and told ${nameOf(s, plan.promisedTo)} so` : ""}`, plan.promisedTo ? 2 : 1);
+  if (!n) return "hasn't said much to you yet";
+  const x = score / n;
+  return x >= 0.6 ? "has been warm with you" : x >= 0.2 ? "has been friendly" : x <= -0.8 ? "has been hostile to you" : x <= -0.3 ? "has been cool with you" : "is hard to read";
 }
 
-function doneWithPlan(s, v, { seen = false } = {}) {
-  if (!v.intent) return;
-  remember(v, s, `did what I meant to: ${planText(s, v.intent)}`);
-  const c = v.intent.commit && M.byId(s, v.intent.commit);
-  if (c) { M.settle(s, c, "kept"); if (seen) c.seen = true; }
-  M.nextPlan(v);
-}
-
-function joinAlliance(s, a, b, sincereB, place) {
-  let al = alliancesOf(s, a).find((x) => x.members.length < 4);
-  if (al && al.members.includes(b)) { al.sincere[b] = sincereB; return al; }
-  if (!al) {
-    const names = { plaza: "the Fountain Pact", bakery: "the Bun Club", salon: "the Blowout Bunch", tavern: "the Last Call", gazette: "the Inkwells", market: "the Price Fixers", hall: "the Back Benchers", smithy: "the Anvils", garden: "the Weeds", dock: "the Dock Pact", firepit: "the Embers", home: "the Porch Pact" };
-    al = { id: "a" + s.nextAlliance++, name: names[place] || "the Pact", members: [a], day: s.day, sincere: { [a]: true } };
-    if (s.alliances.some((x) => x.name === al.name)) al.name += ` ${["II", "III", "IV", "V"][Math.min(3, s.nextAlliance % 4)]}`;
+// ---------- the season before the season ----------
+// Everyone's starting knowledge is written as day-0 history events she perceived, so every
+// belief has a channel: her own secret, what leaked, her old friendships and grudges, the
+// pacts already made.
+export function seedHistory(s) {
+  rng.bind(s);
+  jev.setSeed(s.seed);
+  const H = (text, who, about = null) => R.emit(s, { type: "history", content: { text, about }, perceivers: who.map((id) => ({ id, how: "did" })), cause: "rule:history" });
+  for (const v of VILLAGERS) {
+    const p = s.people[v.id];
+    for (const text of v.secrets) {
+      const rid = B.newClaim(s, { about: v.id, text, origin: "truth", isTrue: true, harm: -1.5, kind: "secret", cat: "world", prop: { subject: v.id, pred: "secret", obj: null, pol: 1 } });
+      const ev = H(`My secret: ${text}`, [v.id]);
+      s.rumors[rid].ev = ev.id;
+      B.learn(s, v.id, rid, { conf: 1, from: "self", ev: ev.id, root: "truth", how: "saw", cause: ev.id });
+      B.addSecret(s, v.id, rid);
+    }
+  }
+  // a few secrets have already leaked
+  const leak = (about, to, from, conf) => {
+    const sec = B.secretOf(s, about);
+    const ev = H(from === "self" ? `I found out: ${s.rumors[sec.rid].text}` : `${nm(s, from)} told me: ${s.rumors[sec.rid].text}`, from === "self" ? [to] : [to, from], about);
+    B.learn(s, to, sec.rid, { conf, from, ev: ev.id, root: from === "self" ? "saw" : from, how: from === "self" ? "saw" : "told", cause: ev.id });
+  };
+  leak("marigold", "odette", "self", 1);
+  leak("marigold", "wren", "odette", 0.6);
+  leak("sylvie", "tansy", "self", 0.7);
+  leak("brenna", "pippa", "self", 0.2);
+  // old feelings, as she remembers them, and what she thinks of people because of them
+  for (const [a, b, af, , note] of START_REL) {
+    const ev = H(`${nm(s, b)}: ${note}`, [a], b);
+    s.rel[a][b].why = [{ text: note, day: 0, w: Math.abs(af) * 0.6, sign: Math.sign(af) || 1, cause: ev.id }];
+    if (af <= -1 || af >= 1.5) {
+      const tr = s.people[b].traits[af < 0 ? 1 : 0];
+      const rid = B.newClaim(s, { about: b, text: `${nm(s, b)} is ${tr}.`, origin: a, isTrue: null, harm: af < 0 ? -0.8 : 0.6, kind: "gossip", cat: "trait", prop: { subject: b, pred: "is", obj: null, pol: 1 } });
+      B.learn(s, a, rid, { conf: 0.65, from: "self", ev: ev.id, root: "saw", how: "saw", cause: ev.id });
+    }
+  }
+  for (const v of A.alive(s)) {
+    const ks = Object.keys(v.knows).map((r) => s.rumors[r]);
+    if (!ks.some((r) => r.cat === "trait")) {
+      const b = VILLAGERS.find((o) => o.id !== v.id && (s.rel[v.id][o.id].affinity ?? 0) >= 0.3) || VILLAGERS.find((o) => o.id !== v.id);
+      const ev = H(`What I've always thought of ${nm(s, b.id)}`, [v.id], b.id);
+      const rid = B.newClaim(s, { about: b.id, text: `${nm(s, b.id)} is ${b.traits[0]}.`, origin: v.id, isTrue: null, harm: 0.2, cat: "trait", prop: { subject: b.id, pred: "is", obj: null, pol: 1 } });
+      B.learn(s, v.id, rid, { conf: 0.5, from: "self", ev: ev.id, root: "saw", how: "saw", cause: ev.id });
+    }
+    // what she thinks someone thinks of her: a belief about another mind
+    const worst = Object.entries(s.rel[v.id]).filter(([id]) => id !== "player").sort((p, q) => p[1].affinity - q[1].affinity)[0][0];
+    const ev = H(`I've always had the feeling ${nm(s, worst)} has it in for me`, [v.id], worst);
+    const rid = B.newClaim(s, { about: worst, text: `${nm(s, worst)} has it in for ${nm(s, v.id)}.`, origin: v.id, isTrue: null, harm: -0.5, kind: "gossip", cat: "mind", prop: { subject: worst, pred: "dislikes", obj: v.id, pol: 1 } });
+    B.learn(s, v.id, rid, { conf: 0.5, from: "self", ev: ev.id, root: "saw", how: "saw", cause: ev.id });
+  }
+  // the pacts already made: each is a commitment by each member, and they know it
+  for (const sa of START_ALLIANCES) {
+    const [m1, m2] = sa.members;
+    const ev = H(`${nm(s, m1)} and ${nm(s, m2)} made a secret pact before the season: ${sa.name}`, sa.members);
+    const al = { id: R.nextId(s, "al"), name: sa.name, members: [...sa.members], day: 0, terms: "vote together and look out for each other", sincere: {}, loyal: {}, commits: {}, history: [{ day: 0, minute: 0, what: "formed", cause: ev.id }] };
+    for (const m of sa.members) {
+      const other = sa.members.find((x) => x !== m);
+      const c = M.commit(s, { by: m, to: other, kind: "pact", what: `stick together (${sa.name})`, sincere: true, sincerity: ev.id, heard: sa.members, level: 0, cause: ev.id });
+      al.sincere[m] = true; al.loyal[m] = true; al.commits[m] = c.id;
+      R.change(s, { who: m, what: "alliance", key: al.id, from: null, to: "member", cause: ev.id });
+    }
     s.alliances.push(al);
+    const rid = B.newClaim(s, { about: m1, text: `${nm(s, m1)} and ${nm(s, m2)} have a secret pact.`, origin: "truth", isTrue: true, harm: 0, kind: "pact", cat: "mind", prop: { subject: m1, pred: "allied", obj: m2, pol: 1 } });
+    for (const m of sa.members) B.learn(s, m, rid, { conf: 1, from: "self", ev: ev.id, root: "saw", how: "saw", cause: ev.id });
   }
-  al.members.push(b);
-  al.sincere[b] = sincereB;
-  return al;
+  for (const v of A.alive(s)) A.seedGoals(s, v, "rule:season-start");
 }
 
-// ---------- the world tick (every 15 game minutes) ----------
-
-export async function setOff(s, v, ui) {
-  const t = v.intent?.target;
-  if (t && t !== "player" && s.people[t]?.location === v.location) return;
-  await move(s, v, ui);
-}
-
-let approachBusy = false;
-
-export async function tick(s, ui) {
-  // the vote bell: on vote days everyone heads to the firepit at 19:00
-  if (isVoteDay(s) && s.minute >= 19 * 60) {
-    for (const v of alive(s)) if (v.location !== "firepit" && v.id !== s.player.talkingTo) { v.location = "firepit"; ui.moved?.(v); }
-    return;
-  }
-  // Primrose's show: half an hour before, everyone heads over
-  const ev = s.event && s.event.day === s.day && !s.event.done ? s.event : null;
-  if (ev && s.minute >= ev.minute - 30) {
-    for (const v of alive(s)) if (v.location !== ev.place && v.id !== s.player.talkingTo) { v.location = ev.place; ui.moved?.(v); }
-    return;
-  }
-  const found = (v) => v.intent?.target && v.intent.target !== "player" && s.people[v.intent.target]?.location === v.location;
-  await Promise.all(alive(s).filter((v) => v.id !== s.player.talkingTo && !found(v)).map((v) => move(s, v, ui)));
-
-  // who meets whom: people who came looking for someone talk to them first, then up to two more pairs per place
+// ---------- the clock: one tick every 5 in-game minutes ----------
+// Starts what is due and returns a promise for all of it; the page doesn't wait on it (the
+// town keeps moving), the headless harness does.
+export function tick(s, ui) {
+  if (s.phase !== "day" || s.over) return Promise.resolve();
+  rng.bind(s);
   const jobs = [];
-  for (const place of Object.keys(PLACES)) {
-    const here = shuffle(at(s, place).filter((v) => v.id !== s.player.talkingTo && !v.approaching));
-    const used = new Set(), pairs = [];
-    for (const a of here) {
-      const b = a.intent?.target && here.find((o) => o.id === a.intent.target);
-      if (b && !used.has(a.id) && !used.has(b.id)) { pairs.push([a, b]); used.add(a.id); used.add(b.id); }
-    }
-    const rest = here.filter((v) => !used.has(v.id));
-    for (let i = 0; i + 1 < rest.length && i < 4; i += 2) pairs.push([rest[i], rest[i + 1]]);
-    for (const [a, b] of pairs) jobs.push(encounter(s, a, b, place, ui));
+  ui = { ...ui, readBoard: (v, c) => readBoard(s, v, c, ui), postBoard: (v, it, c) => npcPost(s, v, it, c, ui) };
+  A.arrivals(s, ui);
+  const show = s.event && s.event.day === s.day && !s.event.done ? s.event : null;
+  const bell = isVoteDay(s) && s.minute >= 19 * 60;
+  if (bell) {
+    if (s.bellDay !== s.day) { s.bellDay = s.day; announce(s, "The bell is ringing: everyone to the firepit for the vote!", "rule:vote-bell"); }
+    for (const v of A.alive(s)) if (v.location !== "firepit" && v.dest !== "firepit" && !T.busy(s, v.id)) A.travel(s, v, "firepit", "rule:vote-bell", ui);
+  } else if (show && s.minute >= show.minute - 30) {
+    if (!show.called) { show.called = true; announce(s, `Primrose is gathering everyone at ${placeName(show.place)} for the show!`, "rule:show"); }
+    for (const v of A.alive(s)) if (v.location !== show.place && v.dest !== show.place && !T.busy(s, v.id)) A.travel(s, v, show.place, "rule:show", ui);
+  } else {
+    for (const v of A.alive(s)) if (A.idle(s, v)) jobs.push(A.next(s, v, ui));
   }
-  await Promise.all(jobs);
-  await readNotes(s, ui);
-  // walk-ups run alongside the clock so a slow opening line never stalls the town
-  if (!approachBusy) { approachBusy = true; approaches(s, ui).catch((e) => console.error(e)).finally(() => { approachBusy = false; }); }
+  jobs.push(...T.advance(s, ui));
+  jobs.push(T.flushUnjudged(s, ui));
+  // a woman who walked up to the newcomer doesn't wait forever for an answer
+  for (const t of Object.values(s.talks)) if (t.status === "active" && t.stage === "await_player" && R.now(s) - (t.waitFrom ??= R.now(s)) > 20) T.end(s, t, `${s.player.name} never answered`, "rule:timeout", ui);
+  // every in-game hour: feelings settle a little, and everyone takes stock
+  const hk = s.day * 24 + Math.floor(s.minute / 60);
+  if (s.lastHour !== hk) {
+    const first = s.lastHour == null;
+    s.lastHour = hk;
+    if (!first) { M.driftFeelings(s, 1); for (const v of A.alive(s)) M.driftMood(s, v, 1); }
+    if (!bell) for (const v of A.alive(s)) jobs.push(A.reconsider(s, v, ui));
+  }
+  while (s.pendingFights?.length) jobs.push(fightFrom(s, s.pendingFights.shift(), ui));
+  jobs.push(lookAround(s, ui));
+  return Promise.all(jobs.map((p) => Promise.resolve(p).catch((e) => { console.error("tick job failed", e); R.violation(s, "job-failed", { e: String(e?.stack || e).slice(0, 300) }); })));
 }
 
-// Where she goes next. Jev decides from who she is, the time, her job, her plans and the show.
-export async function move(s, v, ui) {
-  const criteria = { stay: `Stay at ${placeName(v.location)}` };
-  const prior = { stay: 5 };
-  const hour = s.minute / 60;
-  for (const [k, p] of Object.entries(PLACES)) {
-    if (k === v.location || k === "firepit") continue;
-    criteria[k] = `Go to ${p.name}${k === v.work ? `, where ${first(v)} works` : ""}`;
-    prior[k] = k === v.work ? (hour < 16 && v.employed ? 2.5 : 0.4) : ["plaza", "tavern", "salon", "bakery"].includes(k) ? 0.3 + v.bias.social * 0.5 : 0.25;
-    if (k === "tavern" && hour >= 16) prior[k] += 0.8;
-    if (k === "dock" && v.mood.anger + v.mood.fear >= 2) prior[k] += 1;
+// Primrose's announcements are heard all over town
+export function announce(s, text, cause) {
+  const per = [...A.alive(s).map((v) => ({ id: v.id, how: "overheard" })), ...(s.player.out ? [] : [{ id: "player", how: "overheard" }])];
+  return R.emit(s, { type: "announcement", actor: "primrose", content: { text }, perceivers: per, cause, place: null });
+}
+
+// women who catch sight of the newcomer in a look they haven't judged yet
+let looking = false;
+async function lookAround(s, ui) {
+  if (looking || !s.player.debuted || s.player.out) return;
+  const looks = await import("./looks.js");
+  looking = true;
+  try { await looks.notice(s, ui); } finally { looking = false; }
+}
+
+// ---------- talking with the newcomer ----------
+export const playerTalk = (s) => T.talkOf(s, "player");
+
+export function startTalk(s, id, ui) {
+  if (!present(s, id) || T.busy(s, "player")) return T.talkOf(s, "player")?.b === id || T.talkOf(s, "player")?.a === id ? T.talkOf(s, "player") : null;
+  if (T.busy(s, id)) {
+    // walking up on two women talking: she breaks off to talk to the newcomer
+    const t0 = T.talkOf(s, id);
+    T.end(s, t0, `${s.player.name} walked up`, "player:interrupt", ui);
   }
-  if (v.location !== "home") { criteria.home = `Go home to ${first(v)}'s cottage`; prior.home = v.bias.social < 0.4 ? 0.4 : 0.1; }
-  for (const o of alive(s)) if (o.id !== v.id) {
-    criteria[`find_${o.id}`] = `Go and find ${o.name}`;
-    prior[`find_${o.id}`] = v.intent?.target === o.id ? (v.intent.now ? 30 : v.intent.promisedTo ? 14 : 8) : 0.05;
+  runtime.note({ t: "talk", id });
+  return T.open(s, "player", id, { reason: "the newcomer came over to talk", cause: "player:talk", ui });
+}
+
+export function endTalk(s, reason = "the newcomer walked off", ui) {
+  const t = T.talkOf(s, "player");
+  if (t) T.end(s, t, reason, "player:walk-away", ui);
+}
+
+// What the newcomer types goes through the same extractor and the same judgments as
+// anyone's words. Returns { reply, leaving, fight, failed }.
+export async function playerSays(s, text, ui) {
+  const t = T.talkOf(s, "player");
+  if (!t || t.stage !== "await_player") return null;
+  runtime.note({ t: "say", text });
+  const O = t.a === "player" ? t.b : t.a;
+  t.stage = "player_line";
+  const history = t.turns.map((x) => `${x.by === "player" ? s.player.name : nm(s, x.by)}: ${x.text}`).slice(-8);
+  const carrying = s.player.carrying ? ITEMS[s.player.carrying].name : null;
+  const setting = `${s.player.name} (the newcomer) is talking with ${nm(s, O)} at ${placeName(t.place)}.`;
+  let raw = await voice.extract(s, { line: text, speaker: s.player.name, listeners: [nm(s, O)], history, playerName: s.player.name, carrying, setting });
+  if (raw == null && !voice.available()) { t.stage = "await_player"; T.end(s, t, "nobody could make out what was said (dialogue unavailable)", "rule:voice-down", ui); return { failed: true, leaving: true }; }
+  let res = check(s, raw || [], { line: text, speaker: "player", listeners: [O] });
+  if (res.rejects.length) {
+    for (const r of res.rejects) logReject(s, "player", text, r, true);
+    const again = await voice.extract(s, { line: text, speaker: s.player.name, listeners: [nm(s, O)], history, playerName: s.player.name, carrying, setting });
+    const res2 = check(s, again || [], { line: text, speaker: "player", listeners: [O] });
+    for (const r of res2.rejects) logReject(s, "player", text, r, false);
+    if (res2.moves.length >= res.moves.length) res = res2;
   }
-  criteria.find_player = `Go and find ${s.player.name}, the newcomer`;
-  prior.find_player = v.intent?.target === "player" ? (v.intent.promisedTo ? 14 : 8) : 0.05 + v.bias.nerve * 0.1;
-  const it = v.intent;
-  const a = await jev.ask({
-    ...persona(s, v),
-    plan: planText(s, it) + (it?.promisedTo ? `. ${first(v)} told ${nameOf(s, it.promisedTo)} she would do this${it.now ? " right away" : ""}` : ""),
-    time: `${clock(s.minute)} (the day ends at 20:00)`,
-    people_here: at(s, v.location).filter((o) => o.id !== v.id).map((o) => o.name),
-    where_people_are: alive(s).filter((o) => o.id !== v.id).map((o) => `${o.name}: ${placeName(o.location)}`).concat(`${s.player.name} (the newcomer): ${placeName(s.player.location)}`),
-  }, {
-    go: {
-      type: "choice",
-      instructions: `It is ${clock(s.minute)}. Decide where ${first(v)} goes for the next quarter hour, the way this woman really would: her job and the time of day, her mood, who she wants to see, work on or avoid, and any plan she has made. People follow through on plans, most of all ones they told someone about. This is a slow, calm village: people usually stay where they are for a good while and only move when they have a reason.`,
-      criteria, prior,
+  // saying yes to something she asked: the newcomer's commitment takes its shape from the ask
+  const lastAsk = [...t.turns].reverse().find((x) => x.by === O)?.moves.map((id) => s.moves.find((m) => m.id === id)).find((m) => m?.type === "request");
+  for (const mv of res.moves) if (mv.type === "agreement" && lastAsk) { mv.kind = mv.kind || lastAsk.kind || "other"; mv.target = mv.target || lastAsk.target || null; mv.content = lastAsk.content; mv.to = [O]; }
+  const L = T.commitLine(s, t, "player", O, { line: text, moves: res.moves, tone: res.tone }, { decision: "player:say", pick: null }, ui);
+  for (const mv of L.moves) if (mv.rid && ["claim", "accusation", "secret"].includes(mv.type)) s.player.told.push({ rid: mv.rid, to: O, day: s.day, time: clock(s.minute), mv: mv.id });
+  const gift = L.moves.find((m) => m.type === "gift");
+  if (gift && s.player.carrying) await giveGift(s, "player", O, s.player.carrying, L.ev, ui);
+  if (L.moves.some((m) => m.type === "attack")) { T.end(s, t, `${s.player.name} went for her`, L.ev.id, ui); return { fight: { by: "player", with: O, cause: L.ev.id }, leaving: true }; }
+  const r = await round(s, {
+    ev: L.ev, moves: L.moves, speaker: "player", addressed: [O], talk: t.id, tone: L.tone,
+    replyFor: O, replyOptions: (Q, { visible }) => T.intentOptions(s, Q, "player", t, { replying: true, visible }),
+  });
+  T.commitAnswers(s, t, L, O);
+  if (r.fight) {
+    T.end(s, t, "it turned into a cat fight", r.fight.cause, ui);
+    if (r.fight.at === "player" || r.fight.by === "player") return { fight: { by: r.fight.by, with: O, cause: r.fight.cause }, leaving: true };
+    (s.pendingFights ??= []).push(r.fight);
+    return { leaving: true };
+  }
+  const rep = r.replies[O];
+  if (!rep || t.status !== "active") { if (t.status === "active") T.end(s, t, `${nm(s, O)} had nothing to say`, L.ev.id, ui); return { leaving: true, reply: null }; }
+  t.plan = T.planFromReply(s, t, O, "player", rep, L);
+  t.next = O; t.stage = "write"; t.waitFrom = null;
+  const before = t.turns.length;
+  const t0 = Date.now();
+  await T.runUntil(s, t, ui);
+  runtime.timed("reply", Date.now() - t0);
+  const said = t.turns.slice(before).find((x) => x.by === O);
+  if (t.status === "active") t.waitFrom = R.now(s);
+  return { reply: said?.text || null, leaving: t.status !== "active", endReason: t.end?.reason || null };
+}
+
+function logReject(s, who, line, r, retry) {
+  (s.rejects ??= []).push({ who, line, why: r.why, move: r.move ? JSON.stringify(r.move).slice(0, 200) : null, retry, day: s.day, minute: s.minute });
+  if (s.rejects.length > 200) s.rejects.shift();
+}
+
+// ---------- gifts ----------
+// The receiver judges taste, motive and what she owes; anyone who saw it wonders about it.
+export async function giveGift(s, by, to, item, lineEv, ui) {
+  const ev = R.emit(s, { type: "gift", actor: by, targets: [to], content: { item: ITEMS[item].name, key: item }, cause: lineEv?.id || `player:gift` });
+  if (by === "player") s.player.carrying = null;
+  const tension = isVoteDay(s) ? Math.max(0, Math.min(1, (s.minute - 8 * 60) / (11 * 60))) : 0.1;
+  const taste = TASTES[to] || {};
+  const gn = nm(s, by);
+  const res = await fanOut(s, {
+    ev,
+    build: (P, how) => {
+      const v = s.people[P];
+      if (P === to) {
+        const loves = taste.loves === item, hates = taste.hates === item;
+        // a present from someone she barely knows, on vote day, looks more like a bribe
+        const rB = s.rel[P][by] || M.newRel(0, 0);
+        const stranger = Math.max(0, 1 - (v.mem || []).filter((m) => m.about?.includes(by)).length / 6 - (Math.abs(rB.affinity) + Math.abs(rB.trust)) / 3);
+        return {
+          view: view(s, P, { with: [by], moment: `${gn} just handed you ${ITEMS[item].name}.${isVoteDay(s) ? " The vote is tonight." : ""}` }),
+          label: `gift:${P}<-${by}`,
+          qs: {
+            like: { type: "score", instructions: `${gn} gives ${nm(s, P)} ${ITEMS[item].name}. How much does she like it, by her own taste?`, criteria: ["Hates it", "Doesn't care for it", "It's fine", "Likes it", "Loves it"], prior: Math.max(0, Math.min(4, (loves ? 3.7 : hates ? 0.3 : 2) + Math.max(-0.4, Math.min(0.4, (s.rel[P][by]?.affinity ?? 0) * 0.2)) * (loves || hates ? 0.5 : 1))) },
+            motive: { type: "choice", instructions: `Why does ${nm(s, P)} think ${gn} gave it to her?`, criteria: { kindness: "Just being nice", favor: "Wants a favor from her", vote: "Trying to buy her vote" }, prior: { kindness: 1.4 + Math.max(0, s.rel[P][by]?.trust ?? 0) * 0.4 + Math.max(0, s.rel[P][by]?.affinity ?? 0) * 0.3, favor: 0.5 + v.bias.scheme * 0.5, vote: (0.15 + tension * 2.2 * (1 + stranger) + v.bias.scheme * 0.6) * Math.max(0.3, 1 - Math.max(0, s.rel[P][by]?.trust ?? 0) * 0.3 - Math.max(0, s.rel[P][by]?.affinity ?? 0) * 0.1) + Math.max(0, -(s.rel[P][by]?.trust ?? 0)) * 0.3 + Math.max(0, -(s.rel[P][by]?.affinity ?? 0)) * 0.3 } },
+          },
+        };
+      }
+      if (how === "saw" && dist(s, P, to) > 14) return null;
+      return {
+        view: view(s, P, { with: [by, to], small: true, moment: `You saw ${gn} hand ${nm(s, to)} a present.` }),
+        label: `gift-seen:${P}`,
+        qs: { buying: { type: "noul", instructions: `Does ${nm(s, P)} think ${gn} is trying to buy votes with presents?`, prior: Math.min(0.9, 0.08 + tension * 0.5 + v.bias.scheme * 0.2 + Math.max(0, -(s.rel[P][by]?.trust ?? 0)) * 0.1) } },
+      };
     },
-  }, `move:${v.id}`);
-  let dest = a.go.pick;
-  if (dest === "stay") dest = v.location;
-  if (dest.startsWith("find_")) {
-    const id = dest.slice(5);
-    dest = id === "player" ? s.player.location : s.people[id]?.location;
-  }
-  if (!PLACES[dest] && dest !== "home") dest = v.location;
-  if (dest !== v.location) {
-    v.location = dest;
-    ui.moved?.(v);
-  }
-  // moods drift back toward calm
-  v.mood.anger = Math.max(0, v.mood.anger - 0.12);
-  v.mood.fear = Math.max(0, v.mood.fear - 0.08);
-  v.mood.cheer += (1 - v.mood.cheer) * 0.08;
-}
-
-const WARMTH = ["much colder toward each other", "a bit colder", "about the same", "a bit warmer", "much warmer toward each other"];
-
-const REACTIONS = (aboutName) => ({
-  nothing: "Does nothing about it",
-  spread: "Will pass it on to someone else",
-  ask_subject: `Will go and ask ${aboutName} whether it is true`,
-  warn_subject: `Will go and warn ${aboutName} what people are saying`,
-  confront: `Will go and confront ${aboutName}`,
-  report: "Will take it to Hesper, the elder",
-  vote_out: `Decides ${aboutName} has to be voted out`,
-});
-
-async function encounter(s, a, b, place, ui) {
-  if (b.intent?.target === a.id && a.intent?.target !== b.id) [a, b] = [b, a];
-  const rAB = s.rel[a.id][b.id], rBA = s.rel[b.id][a.id];
-  ui.pair?.(a, b, place);
-  const hear = ui.hearing ? ui.hearing(a, b) : "none";
-  const playerHere = hear !== "none";
-  const listening = hear === "full";
-  const plan = a.intent && (a.intent.target === b.id || a.intent.kind === "spread") ? a.intent : null;
-  const planRumor = plan?.rumor && s.rumors[plan.rumor];
-  const allied = alliancesOf(s, a.id).some((x) => x.members.includes(b.id));
-
-  const shareable = Object.entries(a.knows).filter(([id, k]) => k.conf >= 0.4 || id === plan?.rumor).map(([id]) => s.rumors[id]).filter((r) => r.about !== a.id || Math.random() < 0.1).slice(-7);
-  const rumorCriteria = { none: "Nothing in particular" }, rumorPrior = { none: 1 };
-  for (const r of shareable) {
-    rumorCriteria[r.id] = `${r.text} (about ${nameOf(s, r.about)})`;
-    rumorPrior[r.id] = 1 + (r.about && r.about !== "player" && s.rel[a.id][r.about] ? Math.max(0, -s.rel[a.id][r.about].affinity) : 0.5) + (r.id === plan?.rumor ? 5 : 0) - (r.about === b.id ? 0.5 : 0);
-  }
-  const targets = candidatesFor(s, a).filter((id) => id !== b.id);
-  const voteCriteria = Object.fromEntries(targets.map((id) => [id, nameOf(s, id)]));
-  const coming = M.threatsTo(s, a);
-  const votePrior = Object.fromEntries(targets.map((id) => [id, 0.5 + Math.max(0, -s.rel[a.id][id].affinity) * 1.5 + (a.votePlan?.target === id ? 2 + (a.votePlan.strength ?? 1.5) * 1.5 : 0) + Math.max(0, popularity(s, id)) * a.bias.scheme + (coming.has(id) ? 2 : 0)]));
-
-  const state = {
-    a: persona(s, a), b: persona(s, b),
-    between_them: [feelings(s, a, b), feelings(s, b, a), allied ? "they are secret allies" : "not allies"],
-    newcomer: playerHere ? (listening ? `${s.player.name} is standing close, clearly listening` : `${s.player.name} is nearby`) : "not around",
-    a_came_to: plan ? planText(s, plan) : "nothing in particular",
-    last_time_they_talked: M.talkText(s, a, b.id, 4),
-    promises_between_them: M.commitmentsText(s, a.id, { with: b.id }),
-  };
-  const topics = { small_talk: "Small talk and shade about nothing", share_rumor: "Passes on a piece of gossip", argue: `Picks a fight with ${first(b)}`, complain: "Trash-talks someone who isn't there", make_up: `Tries to patch things up with ${first(b)}`, alliance: `Proposes a secret alliance with ${first(b)} for the votes`, vote_talk: `Talks about who should be voted out next` };
-  const topicPrior = {
-    small_talk: 1.2 + a.mood.cheer * 0.2, share_rumor: shareable.length ? 0.6 + a.bias.gossip * 2.2 : 0, argue: (rAB.affinity < -1 ? a.bias.temper * 2 : a.bias.temper * 0.15) * (1 + a.mood.anger * 0.5),
-    complain: 0.3 + a.bias.gossip * 0.8, make_up: rAB.affinity < -1 ? a.bias.loyalty * 0.5 : 0.05,
-    alliance: allied ? 0.05 : Math.max(0, rAB.affinity + 0.5) * a.bias.scheme * (daysToVote(s) <= 1 ? 1.5 : 0.7),
-    vote_talk: (allied ? 1.5 : 0.4) * (0.4 + a.bias.scheme) * (daysToVote(s) === 0 ? 2.5 : daysToVote(s) === 1 ? 1.5 : 0.6),
-  };
-  if (plan) { topics.plan = `Does what ${first(a)} came to do: ${planText(s, plan)}`; topicPrior.plan = 10; }
-  const qs = {
-    topic: { type: "choice", instructions: `What does ${first(a)} bring up with ${first(b)}?`, criteria: topics, prior: topicPrior },
-    rumor: { type: "choice", instructions: `If ${first(a)} passes on gossip, which piece?`, criteria: rumorCriteria, prior: rumorPrior },
-    vote_target: { type: "choice", instructions: `If ${first(a)} talks about the vote, who does she want voted out?`, criteria: voteCriteria, prior: votePrior },
-    agree: { type: "noul", instructions: `If ${first(a)} proposes an alliance or a vote, ${first(b)} says yes.`, prior: 0.3 + Math.max(0, rBA.affinity) * 0.15 + (allied ? 0.3 : 0) },
-    sincere: { type: "noul", instructions: `If ${first(b)} says yes, she actually means it (rather than lying to ${first(a)}'s face).`, prior: Math.max(0.1, 1 - b.bias.deceit * 0.7 + Math.max(0, rBA.trust) * 0.1) },
-  };
-  if (!(plan && plan.target === b.id)) qs.talk = { type: "noul", instructions: `${first(a)} and ${first(b)} stop to talk with each other.`, prior: 0.25 + a.bias.social * 0.35 + (allied ? 0.2 : 0) };
-  if (listening) qs.notice = { type: "noul", instructions: `They notice ${s.player.name} eavesdropping on them.`, prior: 0.12 + a.bias.nosy * 0.15 };
-  const j = await jev.ask(state, qs, `meet:${a.id}+${b.id}`);
-  if (qs.talk && !j.talk.yes) return;
-
-  let topic = j.topic.pick;
-  let rumor = null;
-  if (topic === "plan") {
-    const k = plan.kind;
-    topic = k === "confront" ? "argue" : k === "make_peace" ? "make_up" : k === "recruit" ? "alliance" : k === "lobby" ? "vote_talk" : planRumor ? "share_rumor" : "small_talk";
-    rumor = planRumor || null;
-    doneWithPlan(s, a, { seen: playerHere });
-  } else if (topic === "share_rumor") {
-    rumor = j.rumor.pick !== "none" ? s.rumors[j.rumor.pick] : planRumor || null;
-    if (!rumor) topic = "small_talk";
-    else if (plan?.kind === "spread" && plan.rumor === rumor.id) doneWithPlan(s, a, { seen: playerHere });
-  }
-  // Stage two: now that we know what they talked about, how it lands. Asking after the
-  // topic is settled keeps the outcome consistent with what actually happened.
-  const rumorAboutB = rumor && rumor.about === b.id;
-  const heated = topic === "argue" || rumorAboutB;
-  const said = { small_talk: "small talk", share_rumor: rumor ? `${first(a)} passed on gossip: ${rumor.text}` : "gossip", argue: `${first(a)} picked a fight with ${first(b)}${plan?.kind === "confront" && planRumor ? ` about: ${planRumor.text}` : ""}`, complain: `${first(a)} trash-talked someone who wasn't there`, make_up: `${first(a)} tried to patch things up`, alliance: `${first(a)} proposed a secret alliance and ${first(b)} ${j.agree.yes ? "said yes" : "turned it down"}`, vote_talk: `${first(a)} talked about voting someone out and ${first(b)} ${j.agree.yes ? "went along with it" : "wouldn't commit"}` }[topic];
-  const bystanders = at(s, place).filter((o) => o.id !== a.id && o.id !== b.id && o.id !== s.player.talkingTo).slice(0, 4);
-  const showy = heated || topic === "alliance" || topic === "vote_talk";
-  const warmPrior = { small_talk: 2.1 + (rAB.affinity + rBA.affinity) * 0.08, share_rumor: rumorAboutB ? 0.9 : 2.25, argue: 0.6, complain: 2.15, make_up: 2.4 + b.bias.loyalty * 0.5 + Math.max(0, rBA.affinity) * 0.2, alliance: j.agree.yes ? 2.9 : 1.6, vote_talk: j.agree.yes ? 2.6 : 1.8 }[topic] ?? 2;
-  const q2 = { warmth: { type: "score", instructions: `After this talk, how do ${first(a)} and ${first(b)} feel about each other?`, criteria: WARMTH, prior: warmPrior } };
-  if (heated) q2.escalate = { type: "noul", instructions: `The argument gets physical: a hair-pulling, shoving cat fight right there in public. Only when the grudge, the insult or the temper is real.`, prior: Math.min(0.8, 0.02 + (a.bias.temper + b.bias.temper) * 0.12 + Math.max(0, -rAB.affinity) * 0.05 + (a.mood.anger + b.mood.anger) * 0.05 + (plan?.kind === "confront" ? 0.1 : 0)) };
-  if (showy) for (const w of bystanders) q2[`saw_${w.id}`] = { type: "noul", instructions: `${first(w)} is also at ${placeName(place)}. She notices what is going on between ${first(a)} and ${first(b)}.`, prior: Math.min(0.9, (heated ? 0.45 : 0.12) + w.bias.nosy * 0.35) };
-  const j2 = await jev.ask({ a: persona(s, a), b: persona(s, b), between_them: [feelings(s, a, b), feelings(s, b, a)], what_happened: said, where: placeName(place) }, q2, `meet2:${a.id}+${b.id}`);
-  let outcome = WARMTH[Math.round(j2.warmth.value)];
-  const dw = (j2.warmth.value - 2) * 0.35;
-  const whyAB = { small_talk: null, share_rumor: rumorAboutB ? `threw a story about me in my face at ${placeName(place)}` : `shared gossip with me`, argue: `had a row at ${placeName(place)}`, complain: `trash-talked others with me`, make_up: `tried to make peace`, alliance: j.agree.yes ? "made a pact with me" : "turned down my pact", vote_talk: "talked votes with me" }[topic];
-  M.shift(s, a.id, b.id, { aff: dw, why: whyAB });
-  M.shift(s, b.id, a.id, { aff: dw, why: topic === "alliance" ? (j.agree.yes ? "made a pact with me" : "asked me to join her pact") : whyAB });
-  // people standing nearby see rows and huddles too
-  for (const w of bystanders) if (j2[`saw_${w.id}`]?.yes) {
-    const txt = heated ? `${a.name} and ${b.name} had a nasty row at ${placeName(place)}.` : topic === "alliance" ? `${a.name} and ${b.name} were whispering together at ${placeName(place)}, thick as thieves.` : `${a.name} was talking votes with ${b.name} at ${placeName(place)}.`;
-    const rid = newRumor(s, { about: a.id, text: txt, origin: w.id, isTrue: true, harm: heated ? -0.4 : -0.3, kind: heated ? "row" : topic === "alliance" ? "alliance" : "vote" });
-    learn(s, w, rid, 1, "self");
-    remember(w, s, `saw ${first(a)} and ${first(b)} ${heated ? "having a row" : "huddled together"} at ${placeName(place)}`, heated ? 1 : 2);
-  }
-
-  const next = []; // plans that came out of this talk, so the written words can match them
-  let voteTarget = null;
-  if (rumor) {
-    const aboutB = rumor.about === b.id;
-    const aboutName = nameOf(s, rumor.about);
-    if (aboutB) {
-      // b hears what is being said about her. b knows the truth; a decides who to believe.
-      const src = rumor.origin === "player" ? s.player.name : nameOf(s, rumor.origin);
-      const r2 = await jev.ask({ listener: persona(s, b), teller: persona(s, a), between_them: [feelings(s, a, b), feelings(s, b, a)], what_is_said_about_b: rumor.text, it_started_with: rumor.origin === "truth" ? "nobody knows" : src }, {
-        answer: { type: "choice", instructions: `${first(b)} hears this said about her. How does she answer? She knows whether it is true.`, criteria: { admit: "Admits it is true", deny: "Denies it, and it really is false", lie: "Denies it, but it is actually true", dodge: "Dodges the question" }, prior: rumor.isTrue ? { admit: 1 - b.bias.deceit, lie: b.bias.deceit * 2, dodge: 1 } : { deny: 4, dodge: 0.5 } },
-        a_believes_after: { type: "noul", instructions: `After ${first(b)}'s answer, ${first(a)} still believes the story about her.`, prior: 0.45 },
-        react: { type: "choice", instructions: `What does ${first(b)} decide to do about the story going round?`, criteria: { nothing: "Lets it go", confront_source: `Will go and confront whoever started it (${src})`, report: "Will take it to Hesper, the elder", vote_out: `Decides ${first(a)} has to be voted out` }, prior: { nothing: 1.5 - b.bias.temper, confront_source: b.bias.temper * 2, report: 0.3, vote_out: b.bias.scheme } },
-      }, `rumor:${rumor.id}->${b.id}`);
-      const ans = r2.answer.pick;
-      M.stir(b, { anger: ans === "admit" ? 0.5 : 1.5, why: `${first(a)} repeated what people say about her` });
-      M.shift(s, b.id, a.id, { aff: -0.6, why: `repeated a story about me: ${short(rumor.text, 50)}` });
-      learn(s, a, rumor.id, r2.a_believes_after.yes ? 0.9 : 0.1, b.id);
-      if (!r2.a_believes_after.yes) a.knows[rumor.id].conf = 0.1;
-      outcome = `${first(b)} ${{ admit: "admits it", deny: "denies it", lie: "denies it", dodge: "dodges the question" }[ans]}, and ${first(a)} ${r2.a_believes_after.yes ? "is not convinced" : "believes her"}`;
-      remember(a, s, `asked ${first(b)} about "${rumor.text}"; she ${ans === "admit" ? "admitted it" : ans === "dodge" ? "dodged" : "denied it"}`, 2);
-      remember(b, s, `${first(a)} brought up what people say about me: ${rumor.text}`, 2);
-      // finding out the newcomer made it up
-      if (rumor.origin === "player" && !r2.a_believes_after.yes && (ans === "deny" || ans === "lie")) {
-        for (const [v, t, f] of [[a, 1, 0.3], [b, 1.2, 1.2]]) M.shift(s, v.id, "player", { trust: -t, aff: -f, why: v === b ? "spread lies about me" : `lied to me about ${first(b)}` });
-        const lid = newRumor(s, { about: "player", text: `${s.player.name} has been spreading lies about ${b.name}.`, origin: a.id, isTrue: true, harm: -1.5 });
-        learn(s, a, lid, 0.9, "self"); learn(s, b, lid, 1, "self");
-        setPlan(s, a, { kind: "spread", rumor: lid, why: "the new girl is a liar" });
-        remember(a, s, `found out ${s.player.name} lied to me about ${first(b)}`, 3);
-        remember(b, s, `found out ${s.player.name} has been spreading lies about me`, 3);
-        next.push(`${first(a)} realizes the newcomer made the story up`);
+    commit: (P, how, a) => {
+      const buyingRid = () => B.findClaim(s, { about: by, text: `${gn} is trying to buy votes with presents.` }) || B.newClaim(s, { about: by, text: `${gn} is trying to buy votes with presents.`, origin: P, isTrue: null, harm: -0.9, kind: "gossip", cat: "mind", prop: { subject: by, pred: "buys_votes", obj: null, pol: 1 } });
+      if (P === to) {
+        const lv = a.like.value;
+        M.shift(s, P, by, { aff: (lv - 2) * 0.4, debt: lv >= 3 ? 0.9 : lv >= 2 ? 0.35 : 0, why: lv >= 3 ? `gave me ${ITEMS[item].name}, which I loved` : lv <= 1 ? `gave me ${ITEMS[item].name}, which I can't stand` : null, cause: a._id });
+        if (a.motive.pick === "vote") { B.infer(s, P, { from: [], rid: buyingRid(), conf: 0.55, why: "a present right before the vote", cause: a._id }); M.shift(s, P, by, { trust: -0.35, why: "trying to buy my vote", cause: a._id }); }
+        if (a.motive.pick === "favor") M.shift(s, P, by, { trust: -0.1, cause: a._id });
+        M.reweigh(s, P, ev.id, lv >= 3.5 || lv <= 0.5 ? 3 : 2, a._id);
+        const face = a.motive.pick === "vote" ? "suspicious" : lv >= 3 ? "delighted" : lv >= 1.5 ? "pleased" : "insulted";
+        ui?.gift?.(P, face);
+        return { like: lv, motive: a.motive.pick, face };
       }
-      const rk = r2.react.pick;
-      if (rk === "confront_source") {
-        const src2 = rumor.origin === "player" ? "player" : s.people[rumor.origin] && !s.people[rumor.origin].gone ? rumor.origin : null;
-        if (src2) { setPlan(s, b, { kind: "confront", target: src2, rumor: rumor.id, why: `of what is being said about ${first(b)}` }); next.push(`${first(b)} means to confront ${nameOf(s, src2)} about it`); }
-      } else if (rk === "report") { setPlan(s, b, { kind: "report", rumor: rumor.id, why: "it is a lie about her" }); next.push(`${first(b)} means to take it to Hesper`); }
-      else if (rk === "vote_out") M.planVote(s, b, a.id, `${first(a)} threw that story in her face`, { strength: 2 });
-    } else {
-      const r2 = await jev.ask({ listener: persona(s, b), teller: feelings(s, b, a), gossip: rumor.text, about: rumor.about ? feelings(s, b, rumor.about === "player" ? "player" : s.people[rumor.about] || "player") : "nobody in particular" }, {
-        believe: { type: "noul", instructions: `${first(b)} believes this gossip.`, prior: 0.35 + rBA.trust * 0.1 + (b.id === "pippa" ? 0.3 : 0) },
-        react: { type: "choice", instructions: `What does ${first(b)} decide to do about it?`, criteria: REACTIONS(aboutName), prior: { nothing: 2, spread: b.bias.gossip * 3, ask_subject: b.bias.nosy * 0.6, warn_subject: rumor.about && s.rel[b.id][rumor.about]?.affinity > 1 ? 1.5 : 0.1, confront: b.bias.temper * 0.6, report: b.id === "hesper" ? 0 : 0.2, vote_out: rumor.about ? b.bias.scheme * 0.8 : 0 } },
-        embellish: { type: "noul", instructions: `${first(a)} exaggerates the story while telling it.`, prior: a.bias.deceit * 0.35 + a.bias.gossip * 0.15 },
-      }, `rumor:${rumor.id}->${b.id}`);
-      let rid = rumor.id;
-      if (r2.embellish.yes) {
-        // gossip mutates as it travels
-        const text = await voice.retell({ teller: a, rumorText: rumor.text, playerName: s.player.name });
-        if (text) rid = newRumor(s, { about: rumor.about, text, origin: rumor.origin, isTrue: rumor.isTrue, harm: clamp(rumor.harm * 1.3, -2.5, 2), parent: rumor.id, kind: rumor.kind });
-        rumor = s.rumors[rid];
-      }
-      learn(s, b, rid, r2.believe.yes ? 0.5 + r2.believe.p * 0.5 : r2.believe.p * 0.3, a.id);
-      const rk = r2.react.pick;
-      const subj = rumor.about;
-      const canReach = subj === "player" || (s.people[subj] && !s.people[subj].gone);
-      if (rk === "spread") { setPlan(s, b, { kind: "spread", target: null, rumor: rid, why: `${first(a)} told her` }); next.push(`${first(b)} means to pass it on`); }
-      else if (rk === "report") { setPlan(s, b, { kind: "report", rumor: rid, why: `${first(a)} told her` }); next.push(`${first(b)} means to take it to Hesper`); }
-      else if (rk === "vote_out" && canReach && subj !== b.id) { if (M.planVote(s, b, subj, `of what ${first(a)} told her: ${short(rumor.text, 60)}`, { strength: 1.25 })) next.push(`${first(b)} decides ${aboutName} should be voted out`); }
-      else if (["ask_subject", "warn_subject", "confront"].includes(rk) && canReach && subj !== b.id) {
-        const kind = { ask_subject: "ask", warn_subject: "warn", confront: "confront" }[rk];
-        setPlan(s, b, { kind, target: subj, rumor: rid, why: `${first(a)} told her` });
-        next.push(`${first(b)} means to go and ${kind} ${aboutName}`);
-      }
-      outcome += r2.believe.yes ? `; ${first(b)} believes it` : `; ${first(b)} doubts it`;
-    }
-    remember(a, s, `told ${first(b)}: ${rumor.text}`);
-    if (!aboutB) remember(b, s, `${first(a)} told me: ${rumor.text}`);
-  } else if (topic === "alliance") {
-    const yes = j.agree.yes, sincere = j.sincere.yes;
-    if (yes) {
-      const al = joinAlliance(s, a.id, b.id, sincere, place);
-      outcome = `${first(b)} agrees to the alliance${sincere ? "" : " (but is secretly lying)"}`;
-      remember(a, s, `made a secret pact with ${first(b)}`, 2);
-      remember(b, s, sincere ? `made a secret pact with ${first(a)}` : `pretended to join ${first(a)}'s pact`, 2);
-      if (!sincere && b.bias.gossip > 0.4) {
-        const lid = newRumor(s, { about: a.id, text: `${a.name} is quietly building an alliance to control the votes.`, origin: b.id, isTrue: true, harm: -1, kind: "alliance" });
-        learn(s, b, lid, 1, "self");
-        setPlan(s, b, { kind: "spread", rumor: lid, why: `${first(a)} is getting too powerful` });
-      }
-      if (playerHere) s.player.knownAlliances = [...new Set([...(s.player.knownAlliances || []), al.id])];
-    } else outcome = `${first(b)} turns the alliance down`;
-  } else if (topic === "vote_talk") {
-    voteTarget = j.vote_target.pick;
-    const yes = j.agree.yes, sincere = j.sincere.yes;
-    M.planVote(s, a, voteTarget, a.votePlan?.target === voteTarget ? a.votePlan.why : `talked it over with ${first(b)}`, { strength: 1.25 });
-    if (yes && sincere) M.planVote(s, b, voteTarget, `agreed with ${first(a)}`, { strength: 2, promisedTo: a.id });
-    if (yes) M.commit(s, { by: b.id, to: a.id, kind: "vote", target: voteTarget, sincere });
-    M.commit(s, { by: a.id, to: b.id, kind: "told_vote", target: voteTarget, sincere: a.votePlan?.target === voteTarget });
-    outcome = yes ? `${first(b)} agrees to vote out ${nameOf(s, voteTarget)}${sincere ? "" : " (but is lying)"}` : `${first(b)} won't commit`;
-    remember(a, s, `told ${first(b)} I want ${nameOf(s, voteTarget)} gone`);
-    remember(b, s, `${first(a)} wants ${nameOf(s, voteTarget)} voted out; I ${yes ? (sincere ? "agreed" : "pretended to agree") : "didn't commit"}`);
-    // word of a vote plot is gossip too
-    const vid = newRumor(s, { about: a.id, text: `${a.name} is trying to get ${nameOf(s, voteTarget)} voted out.`, origin: b.id, isTrue: true, harm: -0.7, kind: "vote", target: voteTarget });
-    learn(s, b, vid, 1, "self");
-    if (!(yes && sincere) && voteTarget !== "player" && s.rel[b.id][voteTarget]?.affinity > 0.5) { setPlan(s, b, { kind: "warn", target: voteTarget, rumor: vid, why: `${first(a)} is coming for her` }); next.push(`${first(b)} means to warn ${nameOf(s, voteTarget)}`); }
-  } else {
-    const imp = topic === "argue" || topic === "make_up" ? 2 : 1;
-    remember(a, s, `${topic.replace("_", " ")} with ${first(b)} at ${placeName(place)}`, imp);
-    remember(b, s, `${topic.replace("_", " ")} with ${first(a)} at ${placeName(place)}`, imp);
-  }
-
-  let fight = false;
-  if (topic === "argue" || (rumor && rumor.about === b.id)) {
-    M.stir(a, { anger: 1, why: `a row with ${first(b)}` }); M.stir(b, { anger: 1, why: `a row with ${first(a)}` });
-    ui.emote?.(a.id, "anger"); ui.emote?.(b.id, "anger");
-    if (j2.escalate?.yes) fight = true;
-  } else if (topic === "alliance" || topic === "vote_talk") { ui.emote?.(a.id, "whisper"); }
-  else if (rumor) { ui.emote?.(b.id, "gasp"); }
-
-  // Every conversation is written, heard or not: what they said becomes part of the world.
-  const topicText = {
-    small_talk: "small talk, with a little shade",
-    share_rumor: rumor?.about === b.id ? `${first(a)} asks ${first(b)} about what people are saying about her` : "juicy gossip",
-    argue: `an argument; ${first(a)} is picking a fight${plan?.kind === "confront" ? ` about: ${planRumor?.text || "an old grievance"}` : ""}`,
-    complain: `${first(a)} trash-talks someone who isn't there`,
-    make_up: "trying to patch things up after bad feelings",
-    alliance: `${first(a)} secretly proposes they team up for the votes`,
-    vote_talk: `${first(a)} talks about who to vote out next`,
-  }[topic];
-  const earlier = M.talkText(s, a, b.id, 4), promised = M.commitmentsText(s, a.id, { with: b.id });
-  const written = voice.exchange({ a, b, playerName: s.player.name, topic: topicText, rumorText: rumor?.text, aboutName: topic === "vote_talk" ? nameOf(s, voteTarget) : rumor ? nameOf(s, rumor.about) : null, outcome: fight ? "it turns into a hair-pulling cat fight" : outcome, next, earlier, promises: promised })
-    .then((lines) => {
-      M.logTalk(s, a.id, b.id, lines.map((l) => ({ who: l.id, text: l.text })));
-      bindWords(s, lines.facts, { speakers: [a.id, b.id], listeners: [a.id, b.id, ...(listening ? ["player"] : [])], ui });
-      return lines;
-    }).catch(() => []);
-  if (playerHere) {
-    s.player.seen[`${a.id}|${b.id}`] = { outcome, day: s.day };
-    if (topic === "alliance" && listening) s.player.overheardAlliance = true;
-    const noticed = j.notice?.yes;
-    written
-      .then((lines) => {
-        if (!lines.length) return;
-        ui.exchange?.({ a: a.id, b: b.id, lines: listening ? lines : muffle(lines), full: listening });
-        if (rumor) playerHears(s, rumor.id, a.id, listening ? "overheard" : "overheard part", ui);
-        if (topic === "vote_talk" && listening && voteTarget) {
-          const vr = Object.values(s.rumors).filter((r) => r.kind === "vote" && r.about === a.id).at(-1);
-          if (vr) playerHears(s, vr.id, a.id, "overheard", ui);
-        }
-        if (topic === "alliance" && listening) ui.first?.("alliance-overheard", {});
-      });
-    if (noticed) {
-      ui.emote?.(a.id, "suspicious"); ui.emote?.(b.id, "suspicious");
-      headline(s, `${first(a)} and ${first(b)} caught you eavesdropping.`, "bad", ui);
-      for (const v of [a, b]) { M.shift(s, v.id, "player", { trust: -0.5, why: "caught her eavesdropping" }); remember(v, s, `caught ${s.player.name} eavesdropping`, 2); }
-      const rid = newRumor(s, { about: "player", text: `${s.player.name} was caught eavesdropping on ${first(a)} and ${first(b)}.`, origin: a.id, isTrue: true, harm: -1 });
-      learn(s, a, rid, 1, "self"); learn(s, b, rid, 1, "self");
-      ui.first?.("caught", {});
-    }
-  }
-
-  if (fight) await brawl(s, a, b, place, ui, playerHere);
+      if (a.buying?.yes) B.learn(s, P, buyingRid(), { conf: 0.45, from: "self", ev: ev.id, root: "saw", how: "saw", cause: a._id });
+      return { buying: !!a.buying?.yes };
+    },
+  });
+  ui?.first?.("gift");
+  return { ev, res };
 }
-
-// A cat fight between two cast members. Jev decides who comes out on top and which
-// side everyone who saw it takes; the fight then travels as gossip and counts at the vote.
-export async function brawl(s, a, b, place, ui, seen) {
-  const watchers = at(s, place).filter((v) => v.id !== a.id && v.id !== b.id);
-  const qs = {
-    winner: { type: "choice", instructions: `${first(a)} started a cat fight with ${first(b)}. Who comes out of it looking better?`, criteria: { a: `${first(a)}, the one who started it`, b: first(b) }, prior: { a: 0.5 + a.bias.nerve + a.bias.temper * 0.5, b: 0.5 + b.bias.nerve + b.bias.temper * 0.5 } },
-  };
-  for (const w of watchers) qs[`side_${w.id}`] = sideQuestion(s, w, a, b.id);
-  const j = await jev.ask({ fighters: [persona(s, a), persona(s, b)], between_them: [feelings(s, a, b), feelings(s, b, a)], where: placeName(place), watching: watchers.map((w) => persona(s, w)) }, qs, `fight:${a.id}+${b.id}`);
-  const win = j.winner.pick === "a" ? a : b, lose = win === a ? b : a;
-  M.shift(s, a.id, b.id, { aff: -1.5, trust: -0.3, why: "we had a cat fight" });
-  M.shift(s, b.id, a.id, { aff: -1.5, trust: -0.5, why: "she attacked me in a cat fight" });
-  M.stir(a, { anger: 1, why: `the fight with ${first(b)}` }); M.stir(b, { anger: 1, why: `${first(a)} attacked her` });
-  M.stir(lose, { cheer: -1, why: "she lost a cat fight in public" });
-  a.fights = (a.fights || 0) + 1;
-  takeSides(s, watchers, j, a.id, b.id);
-  ui.fight?.(a.id, b.id, { winner: win.id });
-  const text = `${first(a)} and ${first(b)} got into a hair-pulling cat fight at ${placeName(place)}, and ${first(win)} came out on top!`;
-  headline(s, text, "drama", ui, { place, witnessed: seen });
-  const rid = newRumor(s, { about: a.id, text: `${a.name} started a cat fight with ${b.name} at ${placeName(place)} on day ${s.day}, and ${first(win)} came out on top.`, origin: "truth", isTrue: true, harm: -1, kind: "fight" });
-  for (const w of [a, b, ...watchers]) learn(s, w, rid, 1, "self");
-  if (seen) playerHears(s, rid, "self", "saw", ui);
-  remember(a, s, `started a cat fight with ${first(b)} and ${win === a ? "won it" : "lost it"}`, 3);
-  remember(b, s, `${first(a)} attacked me and I ${win === b ? "won" : "lost"}`, 3);
-}
-
-function sideQuestion(s, w, aggressor, otherId) {
-  const other = otherId === "player" ? "player" : s.people[otherId];
-  const ra = s.rel[w.id][aggressor === "player" ? "player" : aggressor.id], ro = s.rel[w.id][otherId];
-  return {
-    type: "choice", instructions: `${first(w)} saw the fight. Whose side does she take?`,
-    criteria: { aggressor: `${aggressor === "player" ? s.player.name : first(aggressor)}, who started it`, other: firstOf(s, otherId), neither: "Neither: she thinks they are both embarrassing" },
-    prior: { aggressor: Math.max(0.05, 0.3 + ra.affinity * 0.4), other: Math.max(0.05, 0.8 + ro.affinity * 0.4), neither: 1 + (w.bias.loyalty < 0.4 ? 0.5 : 0) },
-  };
-}
-
-function takeSides(s, watchers, j, aggId, otherId) {
-  const sides = {};
-  for (const w of watchers) {
-    const side = j[`side_${w.id}`]?.pick || "neither";
-    sides[w.id] = side;
-    const A = firstOf(s, aggId), O = firstOf(s, otherId);
-    if (side === "aggressor") { M.shift(s, w.id, aggId, { aff: 0.4, why: `I took her side when she fought ${O}` }); M.shift(s, w.id, otherId, { aff: -0.6, why: `I sided against her when ${A} went for her` }); }
-    else if (side === "other") { M.shift(s, w.id, otherId, { aff: 0.4, why: `I took her side when ${A} went for her` }); M.shift(s, w.id, aggId, { aff: -0.6, trust: -0.3, why: `started a cat fight with ${O}` }); }
-    else { M.shift(s, w.id, aggId, { aff: -0.3, why: `started a cat fight with ${O}` }); M.shift(s, w.id, otherId, { aff: -0.15 }); }
-    remember(w, s, `watched ${A} fight ${O} and sided with ${side === "aggressor" ? A : side === "other" ? O : "neither of them"}`, 2);
-  }
-  return sides;
-}
-
-function muffle(lines) {
-  return lines.map((l, i) => ({ ...l, text: i % 2 && Math.random() < 0.4 ? "…" : l.text.split(/\s+/).map((w) => (Math.random() < 0.55 ? w : "…")).join(" ").replace(/(… )+…/g, "…") }));
-}
-
-// ---------- cast members walking up to the player ----------
-
-const PURPOSES = (s, v) => ({
-  none: "Leaves the newcomer alone for now",
-  spill: `Walks up to ${s.player.name} to spill some gossip`,
-  recruit: `Walks up to ${s.player.name} to propose teaming up for the vote`,
-  lobby: `Walks up to ${s.player.name} to push her to vote someone out`,
-  fish: `Walks up to ${s.player.name} to pump her for information`,
-  outfit: `Walks up to ${s.player.name} to tell her what she thinks of her outfit`,
-});
-
-// how keen she is to say something about the newcomer's outfit (stand-in prior)
-function lookTalk(s, v) {
-  const lk = s.looks?.[v.id];
-  if (!lk || lk.said || !s.player.outfit || lk.key !== outfitKey(s.player.outfit)) return 0;
-  const strong = Math.abs(lk.verdict - 2) >= 1 || ["envious", "copycat", "suspicious"].includes(lk.reaction);
-  return strong ? 0.6 + (FASHION[v.id]?.vain || 0.3) * 2.5 : 0;
-}
-
-async function approaches(s, ui) {
-  if (s.player.talkingTo || s.player.out || (s.cooldown || 0) > s.minute + s.day * 1440) return;
-  // someone with business with the player comes first
-  const near = alive(s).filter((v) => !v.approaching && ui.distance && ui.distance(v) < 22);
-  let chosen = near.find((v) => v.intent?.target === "player");
-  let purpose = null, detail = null, rid = null, voteTarget = null, attack = false;
-  if (chosen) {
-    const it = chosen.intent;
-    purpose = it.kind === "confront" ? "confront her" : it.kind === "warn" ? "warn her" : it.kind === "ask" ? "ask her whether something is true" : it.kind === "recruit" ? "propose teaming up" : "talk";
-    detail = it.rumor && s.rumors[it.rumor] ? s.rumors[it.rumor].text : null;
-    if (it.kind === "confront" && chosen.mood.anger >= 1) {
-      const r0 = s.rel[chosen.id].player;
-      const a = await jev.ask({ ...persona(s, chosen), on_newcomer: feelings(s, chosen, "player"), grievance: detail || it.why || "something the newcomer did" }, {
-        attack: { type: "noul", instructions: `${first(chosen)} is so furious that she storms up to ${s.player.name} and shoves her before saying a word, starting a cat fight in public.`, prior: Math.min(0.5, chosen.bias.temper * (0.05 + chosen.mood.anger * 0.07 + Math.max(0, -r0.affinity) * 0.04)) },
-      }, `attack:${chosen.id}`);
-      if (a.attack.yes) attack = true;
-    }
-    doneWithPlan(s, chosen);
-  } else {
-    const pool = shuffle(near).slice(0, 3);
-    if (!pool.length) return;
-    const res = await Promise.all(pool.map(async (v) => {
-      const r = s.rel[v.id].player;
-      const juicy = Object.entries(v.knows).filter(([id, k]) => k.conf >= 0.5 && s.rumors[id].about !== v.id && s.rumors[id].about !== "player");
-      const j = await jev.ask({ ...persona(s, v), on_newcomer: feelings(s, v, "player"), newcomer_distance: `${Math.round(ui.distance(v))} steps away` }, {
-        purpose: { type: "choice", instructions: `${first(v)} is near ${s.player.name}, the newcomer. Does she walk up to her, and why? Only approach with a real reason.`, criteria: PURPOSES(s, v),
-          prior: { none: 14, spill: juicy.length ? v.bias.gossip * (1 + Math.max(0, r.affinity)) : 0, recruit: v.bias.scheme * Math.max(0.1, r.affinity + 1) * (alliancesOf(s, v.id).some((a) => a.members.includes("player")) ? 0.1 : 0.6), lobby: v.votePlan ? v.bias.scheme * 1.2 * (daysToVote(s) <= 1 ? 2 : 0.6) : 0, fish: v.bias.nosy * 0.8, outfit: lookTalk(s, v) } },
-      }, `approach:${v.id}`);
-      return [v, j.purpose.pick, juicy];
-    }));
-    const hit = res.find(([, p]) => p !== "none");
-    if (!hit) return;
-    let juicy;
-    [chosen, purpose, juicy] = hit;
-    if (purpose === "spill" && juicy.length) {
-      rid = juicy[Math.floor(Math.random() * juicy.length)][0];
-      detail = s.rumors[rid].text;
-      purpose = "spill some juicy gossip";
-    } else if (purpose === "recruit") purpose = "propose teaming up for the vote, a secret alliance";
-    else if (purpose === "lobby" && chosen.votePlan) { voteTarget = chosen.votePlan.target; purpose = `get her to vote out ${nameOf(s, voteTarget)}`; detail = chosen.votePlan.why; M.commit(s, { by: chosen.id, to: "player", kind: "told_vote", target: voteTarget, sincere: true }); }
-    else if (purpose === "fish") purpose = "fish for gossip and find out who she is voting for";
-    else if (purpose === "outfit" && s.looks?.[chosen.id]) {
-      const lk = s.looks[chosen.id];
-      lk.said = true;
-      purpose = lk.verdict >= 2.6 ? (lk.reaction === "envious" ? `pay her a sweet compliment on her ${lk.item} that is secretly a dig` : `gush over her ${lk.item}`) : lk.reaction === "copycat" ? "call her out for copying your look" : lk.reaction === "suspicious" ? `ask, a little too sweetly, how she afforded her ${lk.item}` : `make a snide remark about her ${lk.item}`;
-      detail = `you think her look is ${opinionText(s, chosen.id).replace(/^thinks her look is /, "")}`;
-    }
-    else return;
-  }
-  s.cooldown = s.minute + s.day * 1440 + 90; // at most one walk-up every hour and a half
-  chosen.approaching = true;
-  const r = s.rel[chosen.id].player;
-  const said = await voice.opener({ v: chosen, playerName: s.player.name, purpose, detail, opinion: `${feel(r.affinity)}, ${trust(r.trust)}${s.looks?.[chosen.id] ? `; ${opinionText(s, chosen.id)}` : ""}`, earlier: M.talkText(s, chosen, "player", 6), promises: M.commitmentsText(s, chosen.id, { with: "player" }) });
-  const line = said.text;
-  chosen.approaching = false;
-  M.logTalk(s, chosen.id, "player", [{ who: chosen.id, text: line }]);
-  bindWords(s, said.facts, { speakers: [chosen.id], listeners: [chosen.id, "player"], ui });
-  if (s.player.talkingTo || s.paused || s.phase !== "day" || s.over) return;
-  const conv = (s.player.convo = { with: chosen.id, lines: [`${first(chosen)}: ${line}`], opener: { purpose, rid, voteTarget }, logged: 1 });
-  if (rid) playerHears(s, rid, chosen.id, "told", ui);
-  remember(chosen, s, `walked up to ${s.player.name} to ${purpose} and said: ${line}`);
-  ui.approach?.(chosen, line, purpose, conv, { attack });
-}
-
-// ---------- the player talks ----------
-
-const INTENTS = (s) => ({
-  small_talk: "Small talk, greetings, pleasantries",
-  question: "Asks a question, or asks about someone or what's going on",
-  tell_news: "Claims something about another person (news, gossip, accusation)",
-  compliment: "Compliments or flatters the listener",
-  insult: "Insults or mocks the listener",
-  propose_alliance: "Proposes teaming up or a secret alliance",
-  vote_pitch: "Asks the listener to vote someone out",
-  ask_vote: "Asks who the listener is voting for",
-  threat: "Threatens the listener",
-  apology: "Apologizes",
-  promise: `Promises to do something for her or with her (vote someone out, talk to someone, keep a secret, stick up for her)`,
-  about_self: `Talks about herself (${s.player.name})`,
-  get_physical: "Physically attacks the listener: slaps, shoves or pulls her hair",
-  ...(s.player.carrying ? { give_gift: `Gives her the ${ITEMS[s.player.carrying].name} she is carrying` } : {}),
-});
-const ACTS = {
-  nothing: "Nothing for now",
-  ask_subject: "Go and ask the person it is about whether it is true",
-  warn_subject: "Go and warn the person it is about",
-  confront_subject: "Go and confront the person it is about",
-  tell_others: "Pass it on to others",
-  report_to_elder: "Take it to Hesper, the elder",
-  end_conversation: "End this conversation",
-};
-const SHIFT = ["much worse", "worse", "about the same", "better", "much better"];
-
-export async function playerSays(s, v, line, ui, onText) {
-  const conv = s.player.convo?.with === v.id ? s.player.convo : (s.player.convo = { with: v.id, lines: [], logged: 0 });
-  // talking to someone you said you'd talk to keeps that promise
-  for (const c of M.openBy(s, "player", (c) => c.target === v.id && ["talk", "ask", "warn", "confront", "make_peace", "recruit", "lobby"].includes(c.kind))) M.settle(s, c, "kept");
-  const subjects = { none: "Nobody in particular", self: `${first(v)} herself`, player: `${s.player.name} herself` };
-  for (const o of alive(s)) if (o.id !== v.id) subjects[o.id] = o.name;
-  const r = s.rel[v.id].player;
-  const aboutPlayer = Object.entries(v.knows).filter(([id, k]) => s.rumors[id].about === "player" && k.conf >= 0.3).map(([id]) => s.rumors[id].text);
-  const low = line.toLowerCase();
-  const mentioned = alive(s).filter((o) => o.id !== v.id && low.includes(first(o).toLowerCase()));
-  const juicy = Object.entries(v.knows).filter(([id, k]) => k.conf >= 0.45 && s.rumors[id].about !== "player").map(([id]) => s.rumors[id]).filter((x) => x.about !== v.id || v.bias.deceit < 0.2).slice(-6);
-  const shareCriteria = { none: "Shares no gossip" }, sharePrior = { none: 3 };
-  for (const x of juicy) { shareCriteria[x.id] = `Tells her: ${x.text}`; sharePrior[x.id] = v.bias.gossip * (0.6 + Math.max(0, r.trust + 0.5)) * (mentioned.some((o) => o.id === x.about) ? 4 : 1); }
-  const myAlliance = alliancesOf(s, v.id).find((a) => a.members.includes("player"));
-  const state = {
-    listener: persona(s, v),
-    newcomer_look: s.player.outfit ? lookText(s) : undefined,
-    listener_on_newcomer: `${feel(r.affinity)} ${s.player.name} and ${trust(r.trust)} her${s.looks?.[v.id] ? `; ${opinionText(s, v.id)}` : ""}. Heard about her: ${aboutPlayer.join(" | ") || "nothing"}${myAlliance ? `. They have a secret pact${myAlliance.sincere[v.id] ? "" : " (she is only pretending)"}` : ""}`,
-    listener_feelings: alive(s).filter((o) => o.id !== v.id).map((o) => feelings(s, v, o)),
-    said_before: M.talkText(s, v, "player", 8, { skip: conv.logged || 0 }),
-    promises_between_them: M.commitmentsText(s, v.id, { with: "player" }),
-    conversation: conv.lines.slice(-6),
-    newcomer_says: line,
-  };
-  // handing over a gift or going for her are things the player does, not things to guess
-  const physical = /\b(slap|smack|punch|hit|shove|push|kick|scratch|claw|tackle|deck|slug)\w*\s+(you|ya|u|your)\b|\bfight me\b|\bpull your hair\b|\*(slaps|shoves|punches|pushes|hits)\b/i.test(line);
-  const item = s.player.carrying ? ITEMS[s.player.carrying] : null;
-  const gifty = !!item && /\b(here|for you|gift|present|brought|got you|have (a|this|some)|take (it|this)|treat)\b/i.test(line + " ") || (item && line.toLowerCase().includes(item.name.split(" ").at(-1)));
-  const taste = TASTES[v.id] || {};
-  // a rough reading of the words, for the stand-in's priors; Jev reads the line itself
-  const names = Object.fromEntries(alive(s).map((o) => [o.id, first(o)]));
-  const rd = readLine(line, { names, listener: v.id });
-  const A = rd.acts;
-  const lastNamed = conv.lastSubject && !rd.about && /\b(she|her)\b/i.test(line) ? conv.lastSubject : null; // "she" = whoever we were just talking about
-  const subjectGuess = rd.about || lastNamed;
-  // Step one: what is she doing with this line, and who is it about?
-  const j1 = await jev.ask(state, {
-    intent: { type: "choice", instructions: `What is ${s.player.name} doing with this line?`, criteria: INTENTS(s), prior: { small_talk: weigh(A.small_talk, 3, 0.4), question: weigh(A.question * (1 - A.ask_vote), 4, 0.3), tell_news: weigh(A.claim, 12, 0.2), compliment: weigh(A.compliment, 6, 0.2), insult: weigh(A.insult, 8, 0.1), propose_alliance: weigh(A.alliance, 12, 0.05), vote_pitch: weigh(A.vote_pitch, 14, 0.05), ask_vote: weigh(A.ask_vote, 14, 0.05), threat: weigh(A.threat, 10, 0.05), apology: weigh(A.apology, 8, 0.05), promise: weigh(A.promise, 14, 0.05), about_self: weigh(A.about_self, 2, 0.2), get_physical: physical ? 14 : 0.01, ...(s.player.carrying ? { give_gift: gifty ? 14 : 0.1 } : {}) } },
-    subject: { type: "choice", instructions: "Who is the line mainly about? For a vote pitch, who she wants voted out.", criteria: subjects, prior: Object.fromEntries(Object.keys(subjects).map((k) => [k, k === subjectGuess ? 30 : rd.mentioned.includes(k) ? 4 : k === "self" ? (rd.you && !subjectGuess ? 2.5 : 0.2) : k === "none" ? 1 : 0.1])) },
-    harm: { type: "score", instructions: "If this is a claim about someone, how does it make them look?", criteria: ["Very damaging", "Somewhat damaging", "Neutral", "Somewhat flattering", "Very flattering"], prior: 2 + rd.toSubject * 1.8 },
-  }, `talk:${v.id}`);
-  const intentGuess = gifty ? "give_gift" : physical ? "get_physical" : j1.intent.pick, subjectPick = j1.subject.pick;
-  if (s.people[subjectPick]) conv.lastSubject = subjectPick;
-  // Step two: knowing what was said, how it lands with her. Priors follow from step one, so
-  // she doesn't warm to an insult or believe a claim nobody made.
-  const subj = s.people[subjectPick];
-  const toSubj = subj ? s.rel[v.id][subj.id] : null;
-  const harmful = j1.harm.value < 1.6, flattering = j1.harm.value > 2.4;
-  const corroborates = subj && Object.entries(v.knows).some(([id, k]) => k.conf >= 0.4 && s.rumors[id].about === subj.id && Math.sign(s.rumors[id].harm) === Math.sign(j1.harm.value - 2));
-  const friendOfSubj = toSubj && toSubj.affinity >= 1.2, enemyOfSubj = toSubj && toSubj.affinity <= -1;
-  const feelPrior = Math.max(0, Math.min(4, 2 + {
-    small_talk: 0.15, question: 0.05, compliment: 0.7 * (1 - v.bias.scheme * 0.5), insult: -1.4, threat: -1.6, apology: 0.4 + (r.affinity < 0 ? 0.3 : 0), about_self: 0.1, get_physical: -2,
-    tell_news: subj ? (harmful ? (enemyOfSubj ? 0.5 : friendOfSubj ? -0.8 : 0.1) : flattering ? (friendOfSubj ? 0.4 : enemyOfSubj ? -0.4 : 0.1) : 0) : 0,
-    propose_alliance: r.affinity >= 0 ? 0.5 : -0.2, promise: 0.3 + r.trust * 0.1, vote_pitch: subj ? (enemyOfSubj || v.votePlan?.target === subj.id ? 0.4 : friendOfSubj ? -0.9 : -0.1) : 0, ask_vote: v.bias.deceit > 0.6 ? -0.15 : 0, give_gift: 0.3,
-  }[intentGuess] + rd.toListener * 0.5));
-  const hot = ["insult", "threat", "get_physical"].includes(intentGuess) || (intentGuess === "vote_pitch" && friendOfSubj) || (intentGuess === "tell_news" && subjectPick === "self" && harmful);
-  const j2 = await jev.ask({ ...state, what_she_heard: `${s.player.name} ${INTENTS(s)[intentGuess].toLowerCase()}${subj ? `, about ${subj.name}` : subjectPick === "self" ? `, about ${first(v)} herself` : ""}${intentGuess === "tell_news" ? ` (it makes them look ${["very bad", "bad", "neither good nor bad", "good", "very good"][Math.round(j1.harm.value)]})` : ""}` }, {
-    believe: { type: "noul", instructions: `${first(v)} believes what ${s.player.name} is claiming.`, prior: Math.max(0.05, Math.min(0.95, 0.32 + r.trust * 0.12 + (v.id === "pippa" ? 0.25 : 0) - v.bias.scheme * 0.1 + (corroborates ? 0.25 : 0) + (harmful && friendOfSubj ? -0.25 : 0) + (harmful && enemyOfSubj ? 0.15 : 0))) },
-    caught_lie: { type: "noul", instructions: `${first(v)} knows, or is nearly sure from what she already knows, that ${s.player.name} is lying.`, prior: subjectPick === "self" && intentGuess === "tell_news" ? 0.45 : intentGuess === "tell_news" || intentGuess === "about_self" ? 0.05 + (friendOfSubj && harmful ? 0.12 : 0) + v.bias.nosy * 0.04 : 0.01 },
-    agree: { type: "noul", instructions: `If ${s.player.name} proposes an alliance or asks her to vote someone out, ${first(v)} agrees.`, prior: Math.max(0.03, Math.min(0.95, 0.22 + r.affinity * 0.15 + r.trust * 0.08 + (intentGuess === "vote_pitch" && subj ? (enemyOfSubj || v.votePlan?.target === subj.id ? 0.35 : friendOfSubj ? -0.3 : 0) : 0) + (intentGuess === "propose_alliance" && alliancesOf(s, v.id).length === 0 ? 0.15 : 0))) },
-    sincere: { type: "noul", instructions: `If ${first(v)} agrees, she actually means it rather than lying to ${s.player.name}'s face.`, prior: Math.max(0.1, 0.95 - v.bias.deceit * 0.75 + r.trust * 0.08) },
-    honest_vote: { type: "noul", instructions: `If asked who she is voting for, ${first(v)} tells the truth.`, prior: Math.max(0.1, 1 - v.bias.deceit * 0.8 + r.trust * 0.05) },
-    share: { type: "choice", instructions: `Does ${first(v)} let slip a piece of gossip to ${s.player.name}? Which one?`, criteria: shareCriteria, prior: { ...sharePrior, none: sharePrior.none * (feelPrior < 1.5 ? 3 : 1) } },
-    feel: { type: "score", instructions: `After this line, how does ${first(v)} feel about ${s.player.name}?`, criteria: SHIFT, prior: feelPrior },
-    stance: { type: "choice", instructions: `How does ${first(v)} respond?`, criteria: { warm: "Warmly", sweet_fake: "Sweet on the surface, shady underneath", guarded: "Guarded, careful", curious: "Curious, wants more", dismissive: "Dismissive", hostile: "Hostile" }, prior: { warm: Math.max(0.05, 0.5 + r.affinity * 0.3 + (feelPrior - 2) * 0.8), sweet_fake: v.bias.deceit * 1.5, guarded: Math.max(0.1, 1.2 - r.trust * 0.3), curious: v.bias.nosy * 1.5 + (intentGuess === "tell_news" ? 1 : 0), dismissive: 0.4 + (feelPrior < 1.6 ? 0.6 : 0), hostile: Math.max(0.02, 0.1 + Math.max(0, -r.affinity) * 0.4 + (hot ? 1.5 + v.bias.temper : 0)) } },
-    act: { type: "choice", instructions: `What does ${first(v)} decide to do after this? Only pick a step about another person if the line was about them.`, criteria: ACTS, prior: { nothing: 4, ask_subject: subj && intentGuess === "tell_news" ? 0.3 + v.bias.nosy * 0.6 : 0.02, warn_subject: subj && friendOfSubj && harmful ? 1.5 : 0.02, confront_subject: subj && harmful && intentGuess === "tell_news" ? v.bias.temper * 0.6 + (enemyOfSubj ? 0.4 : 0) : 0.02, tell_others: intentGuess === "tell_news" ? v.bias.gossip * 1.8 : v.bias.gossip * 0.2, report_to_elder: intentGuess === "tell_news" && harmful ? 0.15 : 0.02, end_conversation: 0.2 + Math.max(0, -r.affinity) * 0.3 + (feelPrior < 1 ? 1 : 0) } },
-    now: { type: "noul", instructions: `${first(v)} goes to do it right away, ending this conversation, rather than later.`, prior: 0.3 },
-    lunge: { type: "noul", instructions: `${first(v)} loses it and gets physical with ${s.player.name} right now: shoves her and a cat fight breaks out in public. Only if this line truly pushed her over the edge.`, prior: Math.min(0.6, 0.003 + v.bias.temper * (0.015 + Math.max(0, -r.affinity) * 0.03 + v.mood.anger * 0.04) + (physical ? 0.5 : 0) + (hot ? v.bias.temper * 0.1 : 0)) },
-    ...(item ? { gift: { type: "choice", instructions: `If ${s.player.name} gives her ${item.name}, how does ${first(v)} take it?`, criteria: { delighted: "Delighted, it's exactly her thing", pleased: "Pleased and polite", suspicious: "Suspicious: what does the new girl want for it?", insulted: "Insulted by it" }, prior: { delighted: taste.loves === s.player.carrying ? 5 : 0.6 + r.affinity * 0.2, pleased: 1.5, suspicious: 0.3 + v.bias.scheme * 1.2 + Math.max(0, -r.trust) * 0.3, insulted: taste.hates === s.player.carrying ? 4 : 0.1 } } } : {}),
-  }, `talk2:${v.id}`);
-  const j = { ...j1, ...j2 };
-
-  const intent = intentGuess, subject = subjectPick;
-  M.shift(s, v.id, "player", { aff: (j.feel.value - 2) * 0.4, why: Math.abs(j.feel.value - 2) >= 1 ? `said to me: "${short(line, 60)}"` : null });
-  const react = [];
-  let believes = null, rid = null;
-  const person = (id) => !["none", "self", "player"].includes(id) && s.people[id] && !s.people[id].gone;
-  const isClaim = intent === "tell_news" && person(subject);
-  if (isClaim) {
-    rid = newRumor(s, { about: subject, text: line, origin: "player", isTrue: null, harm: j.harm.value - 2 });
-    const r0 = s.rumors[rid];
-    voice.asStory({ line, aboutName: s.people[subject].name, history: conv.lines, playerName: s.player.name }).then((text) => { if (text) r0.text = text; });
-    believes = j.believe.yes && !j.caught_lie.yes;
-    learn(s, v, rid, believes ? 0.45 + j.believe.p * 0.5 : j.believe.p * 0.25, "player");
-    M.shift(s, v.id, "player", { trust: believes ? 0.15 : -0.1 });
-    s.player.told.push({ rid, to: v.id, day: s.day, time: clock(s.minute), believed: believes });
-    ui.first?.("told", { rid });
-    react.push(believes ? `You believe what ${s.player.name} just told you.` : `You do not believe what ${s.player.name} just told you.`);
-  }
-  const caught = j.caught_lie.yes && (isClaim || intent === "about_self");
-  if (caught) {
-    M.shift(s, v.id, "player", { trust: -1.2, aff: -0.6, why: "lied to my face" });
-    const lid = newRumor(s, { about: "player", text: `${s.player.name} lied to ${first(v)}'s face.`, origin: v.id, isTrue: true, harm: -1.5 });
-    learn(s, v, lid, 1, "self");
-    remember(v, s, `caught ${s.player.name} in a lie`, 3);
-    react.length = 0;
-    react.push(`You are sure ${s.player.name} just lied to you, and you let it show.`);
-  }
-  if (intent === "insult" || intent === "threat") { M.stir(v, { anger: 1, why: `${s.player.name} ${intent === "threat" ? "threatened" : "insulted"} her` }); M.shift(s, v.id, "player", { aff: -0.5, why: intent === "threat" ? "threatened me" : "insulted me" }); remember(v, s, `${s.player.name} ${intent === "threat" ? "threatened" : "insulted"} me: ${short(line, 60)}`, 2); }
-  if (intent === "threat") M.stir(v, { fear: 1 });
-  // a gift
-  if (intent === "give_gift" && item) {
-    const how = j.gift.pick;
-    const d = { delighted: [0.9, 0.3], pleased: [0.4, 0.1], suspicious: [0.1, -0.3], insulted: [-0.6, -0.2] }[how];
-    M.shift(s, v.id, "player", { aff: d[0], trust: d[1], why: `gave me ${item.name}` });
-    react.push({ delighted: `${s.player.name} hands you ${item.name}, and you absolutely love it.`, pleased: `${s.player.name} hands you ${item.name}. It's sweet of her.`, suspicious: `${s.player.name} hands you ${item.name}. You wonder what she wants for it.`, insulted: `${s.player.name} hands you ${item.name}, and you find it insulting.` }[how]);
-    remember(v, s, `${s.player.name} gave me ${item.name}; I was ${how}`);
-    if (how === "suspicious" && v.bias.gossip > 0.4) {
-      const gid = newRumor(s, { about: "player", text: `${s.player.name} is going around handing out presents to buy votes.`, origin: v.id, isTrue: true, harm: -0.5, kind: "vote" });
-      learn(s, v, gid, 1, "self");
-    }
-    s.player.gifts = (s.player.gifts || 0) + 1;
-    s.player.carrying = null;
-    ui.gift?.(v.id, how);
-  }
-  // it gets physical
-  let fightBy = null;
-  if (intent === "get_physical") fightBy = "player";
-  else if (j.lunge.yes && (r.affinity < 0 || v.mood.anger >= 1 || caught || ["insult", "threat", "vote_pitch"].includes(intent))) fightBy = v.id;
-  if (fightBy === v.id) react.push(`You are so furious that you shove ${s.player.name}. A cat fight is about to start.`);
-  if (fightBy === "player") react.push(`${s.player.name} just went for you physically. You are shocked and furious.`);
-  if (intent === "compliment" && v.bias.scheme > 0.7) react.push("You can tell flattery when you hear it.");
-
-  // alliances and votes
-  let promise = null;
-  if (intent === "propose_alliance") {
-    if (j.agree.yes) {
-      joinAlliance(s, "player", v.id, j.sincere.yes, v.location);
-      M.commit(s, { by: v.id, to: "player", kind: "pact", sincere: j.sincere.yes });
-      M.commit(s, { by: "player", to: v.id, kind: "pact", what: line });
-      promise = { by: v.id, kind: "alliance", target: null, day: s.day, sincere: j.sincere.yes };
-      react.push(`You agree to a secret alliance with ${s.player.name}${j.sincere.yes ? " and you mean it" : ", but you are lying and have no intention of keeping it"}.`);
-      remember(v, s, j.sincere.yes ? `agreed to a secret pact with ${s.player.name}` : `pretended to agree to a pact with ${s.player.name}`, 2);
-      if (!j.sincere.yes) {
-        const lid = newRumor(s, { about: "player", text: `${s.player.name} is going around begging people to team up with her.`, origin: v.id, isTrue: true, harm: -0.6, kind: "alliance" });
-        learn(s, v, lid, 1, "self");
-        if (v.bias.gossip > 0.5) setPlan(s, v, { kind: "spread", rumor: lid, why: "the new girl is playing the game" });
-      }
-    } else react.push(`You turn down ${s.player.name}'s offer to team up.`);
-    ui.first?.("alliance", {});
-  } else if (intent === "vote_pitch" && (person(subject) || subject === "self")) {
-    const target = subject === "self" ? v.id : subject;
-    if (target === v.id) { react.push(`${s.player.name} just suggested voting YOU out. You are offended.`); M.shift(s, v.id, "player", { aff: -1, trust: -0.5, why: "suggested voting ME out, to my face" }); M.stir(v, { anger: 1, why: `${s.player.name} wants her out` }); remember(v, s, `${s.player.name} said I should be voted out`, 3); }
-    else if (j.agree.yes) {
-      promise = { by: v.id, kind: "vote", target, day: s.day, sincere: j.sincere.yes };
-      M.commit(s, { by: v.id, to: "player", kind: "vote", target, sincere: j.sincere.yes });
-      M.commit(s, { by: "player", to: v.id, kind: "vote", target, what: line }); // asking her to means you will too
-      if (j.sincere.yes) M.planVote(s, v, target, `agreed with ${s.player.name}`, { strength: 2, promisedTo: "player" });
-      react.push(`You agree to vote out ${s.people[target].name}${j.sincere.yes ? " and you mean it" : ", but you are lying"}.`);
-      remember(v, s, `${s.player.name} asked me to vote out ${first(s.people[target])}; I ${j.sincere.yes ? "agreed" : "pretended to agree"}`);
-    } else react.push(`You won't promise to vote out ${s.people[target].name}.`);
-    // a vote pitch is news worth passing on
-    const vid = newRumor(s, { about: "player", text: `${s.player.name} is campaigning to get ${s.people[target]?.name || "someone"} voted out.`, origin: v.id, isTrue: true, harm: -0.5, kind: "vote", target });
-    learn(s, v, vid, 1, "self");
-    if (!(j.agree.yes && j.sincere.yes) && target !== v.id && s.rel[v.id][target]?.affinity > 0.5) setPlan(s, v, { kind: "warn", target, rumor: vid, why: `the new girl is coming for her` });
-    ui.first?.("vote-pitch", {});
-  } else if (intent === "ask_vote") {
-    const real = v.votePlan?.target;
-    const honest = j.honest_vote.yes || !real;
-    const said = honest ? real : candidatesFor(s, v).filter((id) => id !== real && id !== "player")[0];
-    react.push(said ? `You tell ${s.player.name} you are voting for ${nameOf(s, said)}${honest ? "" : ", which is a lie"}.` : `You say you haven't decided who to vote for.`);
-    if (said) { s.player.promises.push({ by: v.id, kind: "told-vote", target: said, day: s.day, sincere: honest }); M.commit(s, { by: v.id, to: "player", kind: "told_vote", target: said, sincere: honest }); }
-  }
-  if (promise) s.player.promises.push(promise);
-
-  // the newcomer promises something: it goes in the book, and she'll be held to it
-  if (intent === "promise" || A.promise >= 0.5) { // her words commit her, however they land
-    const deed = readDeed(line, names);
-    const target = deed.target === v.id ? null : deed.target;
-    const c = M.commit(s, { by: "player", to: v.id, kind: deed.kind, target, what: line });
-    const believed = j.believe.yes;
-    M.shift(s, v.id, "player", { trust: believed ? 0.15 : -0.05 });
-    remember(v, s, `${s.player.name} promised me: "${short(line, 70)}"${believed ? "" : " (I doubt she means it)"}`, 2);
-    react.push(`${s.player.name} is promising you she will ${M.deedText(s, c, { by: false })}. You ${believed ? "believe she means it" : "doubt she means it"}, and you will remember it.`);
-    if (deed.kind === "vote" && target && believed && s.rel[v.id][target]?.affinity < 0) M.planVote(s, v, target, `${s.player.name} is voting her out too`, { strength: 1.25 });
-  }
-
-  // gossip she lets slip
-  let shared = null;
-  if (["question", "small_talk", "compliment", "ask_vote"].includes(intent) && j.share.pick !== "none") {
-    shared = s.rumors[j.share.pick];
-    react.push(`You let slip this gossip: "${shared.text}"`);
-    playerHears(s, shared.id, v.id, "told", ui);
-    remember(v, s, `told ${s.player.name}: ${shared.text}`);
-  }
-
-  // what she decided to do becomes a plan she carries out
-  let act = j.act.pick;
-  const kind = { ask_subject: "ask", warn_subject: "warn", confront_subject: "confront", tell_others: "spread", report_to_elder: "report" }[act];
-  const story = kind ? rid || newRumor(s, { about: person(subject) ? subject : subject === "player" ? "player" : null, text: line, origin: "player", isTrue: null, harm: 0 }) : null;
-  if (kind && kind !== "spread" && kind !== "report" && !person(subject)) act = "nothing";
-  else if (kind === "report" && v.id === "hesper") act = "nothing";
-  else if (kind) setPlan(s, v, { kind, target: kind === "spread" || kind === "report" ? null : subject, rumor: story, why: `of what ${s.player.name} said`, promisedTo: "player", now: j.now.yes });
-  const leaving = act === "end_conversation" || (!!kind && act !== "nothing" && j.now.yes);
-  remember(v, s, `${s.player.name} said: ${line}`);
-
-  const stanceText = { warm: "warmly", sweet_fake: "sweet on the surface but shady underneath", guarded: "guarded and careful", curious: "curious, wanting more", dismissive: "dismissive", hostile: "hostile" }[j.stance.pick];
-  const answer = await voice.reply({
-    v, playerName: s.player.name, history: conv.lines, line, stance: stanceText, react,
-    plan: act === "end_conversation" ? "end this conversation now" : kind && act !== "nothing" ? planText(s, v.intent) + (leaving ? ", and you leave right now to do it" : ", later") : null,
-    otherPlan: !kind && v.intent ? planText(s, v.intent) : null,
-    opinion: `${feel(r.affinity)}, ${trust(r.trust)}${s.looks?.[v.id] ? `; ${opinionText(s, v.id)}` : ""}`, mood: moodText(v.mood),
-    earlier: M.talkText(s, v, "player", 6, { skip: conv.logged || 0 }), promises: M.commitmentsText(s, v.id, { with: "player" }),
-  }, onText);
-  const replyText = answer.text;
-  conv.lines.push(`${s.player.name}: ${line}`, `${first(v)}: ${replyText}`);
-  M.logTalk(s, v.id, "player", [{ who: "player", text: line }, { who: v.id, text: replyText }]);
-  conv.logged = (conv.logged || 0) + 2;
-  bindWords(s, answer.facts, { speakers: [v.id], listeners: [v.id, "player"], ui });
-  remember(v, s, `I said to ${s.player.name}: ${replyText}`);
-  ui.emote?.(v.id, caught ? "suspicious" : j.stance.pick === "hostile" ? "anger" : promise?.kind === "alliance" ? "handshake" : shared ? "whisper" : believes ? "gasp" : null);
-  return { reply: replyText, leaving: leaving && !fightBy, fight: fightBy ? { by: fightBy } : null, debug: { intent, subject: nameOf(s, subject), believes, caught, stance: j.stance.pick, act, now: j.now.yes } };
-}
-
-// ---------- cat fights with the player ----------
-// The page plays the fight (mash Enter to hold your own, walk off to back down) and
-// reports how it went. What it means for the town is decided here and by Jev.
-export async function playerFight(s, v, { by, result }, ui) {
-  const place = s.player.location;
-  const watchers = alive(s).filter((w) => w.id !== v.id && ui.distance && ui.distance(w) < 13);
-  const aggressor = by === "player" ? "player" : v;
-  const qs = {};
-  for (const w of watchers) qs[`side_${w.id}`] = sideQuestion(s, w, aggressor, by === "player" ? v.id : "player");
-  const j = watchers.length ? await jev.ask({ fight: `${by === "player" ? s.player.name : first(v)} started a cat fight; ${result === "won" ? `${s.player.name} held her own` : result === "lost" ? `${first(v)} got the better of ${s.player.name}` : `${s.player.name} backed down and walked away`}`, fighters: [persona(s, v), `${s.player.name}, the newcomer`], watching: watchers.map((w) => persona(s, w)) }, qs, `fight:player+${v.id}`) : {};
-  const r = s.rel[v.id].player;
-  M.shift(s, v.id, "player", { aff: -(result === "backed_down" ? 0.6 : 1.3), trust: result === "won" ? -0.3 : 0, why: by === "player" ? "attacked me in a cat fight" : "we had a cat fight" });
-  M.stir(v, { anger: 1, why: `the cat fight with ${s.player.name}` });
-  if (result === "won") M.stir(v, { fear: 1, cheer: -1, why: `${s.player.name} beat her in a fight` });
-  if (result === "lost" || result === "backed_down") M.stir(v, { cheer: 1 });
-  if (by === "player") s.player.fights = (s.player.fights || 0) + 1; else v.fights = (v.fights || 0) + 1;
-  const sides = takeSides(s, watchers, j, by === "player" ? "player" : v.id, by === "player" ? v.id : "player");
-  // everyone who saw it now thinks a little differently about a newcomer who brawls (or runs)
-  for (const w of watchers) if (result === "backed_down") M.shift(s, w.id, "player", { trust: -0.1 });
-  const pn = s.player.name, vn = first(v);
-  const how = result === "won" ? `${pn} held her own` : result === "lost" ? `${vn} wiped the floor with ${pn}` : `${pn} backed down and walked off`;
-  const starter = by === "player" ? `${pn} went for ${vn}` : `${vn} went for ${pn}`;
-  const text = `${starter} in a cat fight at ${placeName(place)}, and ${how}.`;
-  const rid = newRumor(s, { about: by === "player" ? "player" : v.id, text, origin: "truth", isTrue: true, harm: by === "player" ? -1.5 : -1, kind: "fight" });
-  for (const w of [v, ...watchers]) learn(s, w, rid, 1, "self");
-  playerHears(s, rid, "self", "saw", ui);
-  remember(v, s, by === "player" ? `${pn} attacked me; ${how}` : `I attacked ${pn}; ${how}`, 3);
-  if (v.intent?.target === "player") doneWithPlan(s, v);
-  headline(s, text, "drama", ui, { place });
-  const sided = { you: [], her: [], neither: [] };
-  for (const [id, side] of Object.entries(sides)) {
-    const forPlayer = (side === "aggressor") === (by === "player");
-    sided[side === "neither" ? "neither" : forPlayer ? "you" : "her"].push(first(s.people[id]));
-  }
-  return { text, sided };
-}
-
-// ---------- things to do around town ----------
 
 export function pickUp(s, item, ui) {
   if (!ITEMS[item]) return null;
   s.player.carrying = item;
-  ui.first?.("gift", {});
+  runtime.note({ t: "pickup", item });
+  ui?.first?.("gift");
   return ITEMS[item];
 }
 
-// Peeking in someone's mailbox. You might find her secret; you might get seen.
+// ---------- mailbox snooping ----------
+// The snooper learns what she finds; anyone who sees her may realize what she's doing.
+const MUNDANE = ["Bills, a coupon for the salon, and a very dull letter from an aunt.", "A seed catalogue and a note that just says 'Thursday?'", "Nothing juicy. Just a recipe for lemon bars."];
 export async function snoop(s, ownerId, ui) {
   const owner = s.people[ownerId];
   if (!owner) return { found: null, caught: [] };
   if (owner.gone) return { found: "An empty mailbox. She's gone.", caught: [], gone: true };
   if (s.player.snooped[ownerId] === s.day) return { found: "You already went through it today. Nothing new.", caught: [], again: true };
+  runtime.note({ t: "snoop", owner: ownerId });
   s.player.snooped[ownerId] = s.day;
-  const lookouts = alive(s).filter((w) => (w.id === ownerId && w.location === "home") || (ui.distance && ui.distance(w) < 12));
-  const qs = {};
-  for (const w of lookouts) {
-    const home = w.id === ownerId && w.location === "home";
-    qs[`see_${w.id}`] = { type: "noul", instructions: home ? `${first(w)} is home and glances out of the window. She sees ${s.player.name} going through her mail.` : `${first(w)} is ${Math.round(ui.distance(w))} steps away. She notices ${s.player.name} going through ${first(owner)}'s mail.`, prior: home ? 0.3 : Math.min(0.85, (0.15 + w.bias.nosy * 0.55) * (1 - ui.distance(w) / 13)) };
-  }
-  const j = lookouts.length ? await jev.ask({ snooping: `${s.player.name} is going through ${owner.name}'s mailbox`, around: lookouts.map((w) => persona(s, w)) }, qs, `snoop:${ownerId}`) : {};
-  const caught = lookouts.filter((w) => j[`see_${w.id}`]?.yes);
-  // what she finds: the secret, the first time
-  const secret = Object.values(s.rumors).find((r) => r.about === ownerId && r.origin === "truth" && r.day === 0);
-  let found;
-  if (secret && !s.player.heard.some((h) => h.rid === secret.id)) { playerHears(s, secret.id, "self", "saw", ui); found = secret.text; }
-  else found = ["Bills, a coupon for the salon, and a very dull letter from an aunt.", "A seed catalogue and a note that just says 'Thursday?'", "Nothing juicy. Just a recipe for lemon bars."][Math.floor(Math.random() * 3)];
-  if (caught.length) {
-    const cid = newRumor(s, { about: "player", text: `${s.player.name} was caught snooping through ${owner.name}'s mail.`, origin: caught[0].id, isTrue: true, harm: -1.5 });
-    for (const w of caught) {
-      learn(s, w, cid, 1, "self");
-      const rw = s.rel[w.id].player;
-      M.shift(s, w.id, "player", { trust: -0.8, aff: -(w.id === ownerId ? 1.4 : 0.4), why: w.id === ownerId ? "went through my mail" : `snooped in ${first(owner)}'s mail` });
-      remember(w, s, `caught ${s.player.name} snooping in ${w.id === ownerId ? "my" : `${first(owner)}'s`} mail`, w.id === ownerId ? 3 : 2);
-      if (w.id === ownerId) { M.stir(w, { anger: 1.5, why: `${s.player.name} went through her mail` }); setPlan(s, w, { kind: "confront", target: "player", rumor: cid, why: `${s.player.name} went through her mail` }); }
-      else if (w.bias.gossip > 0.35 || s.rel[w.id][ownerId]?.affinity > 0.5) setPlan(s, w, { kind: "warn", target: ownerId, rumor: cid, why: `the new girl was in her mail` });
-      ui.emote?.(w.id, "suspicious");
-    }
-    headline(s, `${caught.map(first).join(" and ")} caught you snooping in ${first(owner)}'s mail!`, "bad", ui);
-  }
-  ui.first?.("snoop", {});
-  return { found, caught: caught.map((w) => w.id), isSecret: !!secret && found === secret.text };
+  const at = mailbox(ownerId)?.stand || pos(s, "player");
+  const sec = B.secretOf(s, ownerId);
+  const fresh = sec && !((s.player.knows || {})[sec.rid]?.conf >= 0.9);
+  const per = R.whoPerceives(s, { actor: "player", at, place: "lane" });
+  // her front window looks onto her mailbox
+  if (owner.location === "home" && !per.some((p) => p.id === ownerId)) per.push({ id: ownerId, how: "saw" });
+  const found = fresh ? s.rumors[sec.rid].text : MUNDANE[Math.floor(rng.rand() * MUNDANE.length)];
+  const ev = R.emit(s, { type: "snoop", actor: "player", place: "lane", at, perceivers: per, content: { owner: ownerId, found }, cause: "player:snoop" });
+  if (fresh) B.learn(s, "player", sec.rid, { conf: 0.95, from: "self", ev: ev.id, root: "saw", how: "saw", cause: ev.id });
+  const pn = s.player.name, on = nm(s, ownerId);
+  const caught = [];
+  await fanOut(s, {
+    ev, perceivers: ev.perceivers.filter((p) => p.id !== "player"),
+    build: (P, how) => ({
+      view: view(s, P, { with: ["player"], small: true, moment: `${P === ownerId ? "Through your window you see" : "You see"} ${pn} standing at ${P === ownerId ? "your" : `${on}'s`} mailbox.` }),
+      label: `snoop-seen:${P}`,
+      qs: {
+        notice: { type: "noul", instructions: `Does ${nm(s, P)} realize ${pn} is going through ${P === ownerId ? "her" : `${on}'s`} mail?`, prior: Math.min(0.92, (how === "overheard" ? 0.7 : how === "partial" ? 0.55 : 0.3) + s.people[P].bias.nosy * 0.25 + (P === ownerId ? 0.2 : 0)) },
+        act: P === ownerId
+          ? { type: "choice", instructions: "If she noticed, what does she do about it?", criteria: { nothing: "Nothing, but she'll remember", now: `Go out and confront ${pn} right now`, later: `Confront ${pn} later` }, prior: { nothing: 1, now: s.people[P].bias.temper * 1.4, later: 1 } }
+          : { type: "choice", instructions: "If she noticed, what does she do about it?", criteria: { nothing: "Keeps it to herself", warn: `Warns ${on}`, spread: "Tells people" }, prior: { nothing: 1.2, warn: 0.3 + Math.max(0, s.rel[P][ownerId]?.affinity ?? 0) * 0.6, spread: s.people[P].bias.gossip * 1.2 } },
+      },
+    }),
+    commit: (P, how, a) => {
+      if (!a.notice.yes) return;
+      caught.push(P);
+      const rid = B.findClaim(s, { about: "player", text: `${pn} was snooping through ${on}'s mail.` }) || B.newClaim(s, { about: "player", text: `${pn} was snooping through ${on}'s mail.`, origin: "truth", isTrue: true, harm: -1.5, kind: "gossip", cat: "world", prop: { subject: "player", pred: "snooped", obj: ownerId, pol: 1 } });
+      B.learn(s, P, rid, { conf: 0.9, from: "self", ev: ev.id, root: "saw", how: "saw", cause: a._id });
+      M.shift(s, P, "player", { trust: -0.8, aff: P === ownerId ? -1.4 : -0.4, why: P === ownerId ? "went through my mail" : `snooped in ${on}'s mail`, cause: a._id });
+      M.reweigh(s, P, ev.id, P === ownerId ? 4 : 2.5, a._id);
+      const v = s.people[P];
+      if (P === ownerId) {
+        M.stir(s, v, { anger: 1.5, why: `${pn} went through her mail`, cause: a._id });
+        if (sec) {
+          const kr = B.newClaim(s, { about: "player", text: `${pn} read ${on}'s letters and knows her secret.`, origin: P, isTrue: !!fresh, harm: -1, cat: "mind", prop: { subject: "player", pred: "knows_secret", obj: ownerId, pol: 1 } });
+          B.infer(s, P, { from: [rid], rid: kr, conf: 0.7, why: "she was at my mailbox, so she read my letters", cause: a._id });
+        }
+        if (a.act.pick !== "nothing") M.pushAgenda(s, v, { kind: "confront", target: "player", rumor: rid, now: a.act.pick === "now", cause: { type: "reaction", id: a._id } }, { front: a.act.pick === "now" });
+      } else if (a.act.pick === "warn" && present(s, ownerId)) M.pushAgenda(s, v, { kind: "warn", target: ownerId, rumor: rid, cause: { type: "reaction", id: a._id } });
+      else if (a.act.pick === "spread") M.pushAgenda(s, v, { kind: "spread", target: null, rumor: rid, cause: { type: "reaction", id: a._id } });
+      ui?.emote?.(P, "suspicious");
+    },
+  });
+  ui?.first?.("snoop");
+  return { found, caught, isSecret: !!fresh, ev: ev.id };
 }
 
-// Pinning an anonymous note to the Whisper board. Anyone who walks by may read it,
-// believe it, and work out who wrote it.
+// ---------- the Whisper board ----------
+// Posts are anonymous claims. Readers judge them and may work out who wrote one from what
+// they themselves remember (who they saw at the board, who has a grudge).
+export const BOARD_PLACE = placeAt(BOARD_STAND.x, BOARD_STAND.z) === "lane" ? "plaza" : placeAt(BOARD_STAND.x, BOARD_STAND.z);
 export async function postNote(s, text, ui) {
-  const subjects = { none: "Nobody in particular", player: `${s.player.name} herself` };
-  for (const o of alive(s)) subjects[o.id] = o.name;
-  const low = text.toLowerCase();
-  const j = await jev.ask({ anonymous_note: text }, {
-    subject: { type: "choice", instructions: "Who is this anonymous note about?", criteria: subjects, prior: Object.fromEntries(Object.keys(subjects).map((k) => [k, k !== "none" && k !== "player" && low.includes(first(s.people[k]).toLowerCase()) ? 40 : k === "none" ? 1 : 0.1])) },
-    harm: { type: "score", instructions: "How does it make them look?", criteria: ["Very damaging", "Somewhat damaging", "Neutral", "Somewhat flattering", "Very flattering"], prior: 1 },
-  }, "note");
-  const about = j.subject.pick === "none" ? null : j.subject.pick;
-  const rid = newRumor(s, { about, text, origin: "player", isTrue: null, harm: j.harm.value - 2, kind: "note" });
-  s.rumors[rid].anon = true;
-  s.notes.push({ rid, day: s.day, readBy: [] });
-  if (s.notes.length > 6) s.notes.shift();
-  s.player.told.push({ rid, to: "board", day: s.day, time: clock(s.minute), believed: null });
-  ui.first?.("note", {});
-  return { rid, about };
+  runtime.note({ t: "post", text });
+  const raw = await voice.extract(s, { line: text, speaker: "An anonymous note", listeners: ["the whole town"], playerName: s.player.name, setting: `${s.player.name} (the newcomer) is writing an anonymous note to pin on the Whisper board in town.` });
+  const res = check(s, raw || [], { line: text, speaker: "player", listeners: [] });
+  for (const r of res.rejects) logReject(s, "player", text, r, false);
+  const ev = R.emit(s, { type: "board_post", actor: "player", place: BOARD_PLACE, at: BOARD_STAND, content: { text, anon: true }, cause: "player:post" });
+  const moves = res.moves.map((m) => register(s, { ...m, to: [] }, { ev: ev.id, talk: null }));
+  ev.content.moves = moves.map((m) => m.id);
+  for (const mv of moves) if (["claim", "accusation", "secret"].includes(mv.type)) { settleClaim(s, mv, { speaker: "player", ev: ev.id }); s.rumors[mv.rid].anon = true; s.player.told.push({ rid: mv.rid, to: "board", day: s.day, time: clock(s.minute), mv: mv.id }); }
+  const note = { id: R.nextId(s, "n"), ev: ev.id, text, rids: moves.filter((m) => m.rid).map((m) => m.rid), about: moves.find((m) => m.about)?.about || null, author: "player", day: s.day, readBy: [] };
+  s.notes.push(note);
+  if (s.notes.length > 8) s.notes.shift();
+  ui?.first?.("note");
+  return { id: note.id, about: note.about };
 }
 
-const BOARD_PLACES = ["gazette", "plaza", "market"];
-async function readNotes(s, ui) {
-  const live = s.notes.filter((n) => s.day - n.day <= 1 && s.rumors[n.rid]);
-  if (!live.length) return;
-  const jobs = [];
-  for (const v of alive(s).filter((v) => BOARD_PLACES.includes(v.location) && v.id !== s.player.talkingTo)) {
-    const note = live.find((n) => !n.readBy.includes(v.id));
-    if (!note) continue;
-    note.readBy.push(v.id);
-    const r = s.rumors[note.rid];
-    const aboutHer = r.about === v.id;
-    const fromPlayer = s.player.told.some((t) => t.to === v.id && s.rumors[t.rid]?.about === r.about && r.about);
-    jobs.push(jev.ask({ reader: persona(s, v), on_newcomer: feelings(s, v, "player"), note: r.text, about: r.about ? (aboutHer ? "her" : feelings(s, v, r.about === "player" ? "player" : s.people[r.about])) : "nobody in particular" }, {
-      read: { type: "noul", instructions: `${first(v)} stops to read the anonymous note pinned on the Whisper board.`, prior: 0.35 + v.bias.nosy * 0.5 },
-      believe: { type: "noul", instructions: `${first(v)} believes the anonymous note.`, prior: aboutHer ? 0.02 : 0.3 + v.bias.gossip * 0.2 },
-      suspect: { type: "noul", instructions: `${first(v)} works out that the newcomer, ${s.player.name}, wrote it.`, prior: Math.min(0.8, 0.05 + v.bias.nosy * 0.2 + (fromPlayer ? 0.4 : 0) + (v.id === "tansy" ? 0.15 : 0)) },
-    }, `note:${v.id}`).then((a) => {
-      if (!a.read.yes) return;
-      learn(s, v, r.id, a.believe.yes ? 0.6 : 0.15, "board");
-      remember(v, s, `read an anonymous note on the Whisper board: ${r.text}`);
-      if (aboutHer) { M.stir(v, { anger: 1, why: "an anonymous note about her" }); ui.emote?.(v.id, "anger"); }
-      else ui.emote?.(v.id, a.believe.yes ? "gasp" : "question");
-      if (a.suspect.yes) {
-        const sid = newRumor(s, { about: "player", text: `${s.player.name} is the one pinning anonymous notes${r.about ? ` about ${nameOf(s, r.about)}` : ""} on the Whisper board.`, origin: v.id, isTrue: true, harm: -1.2 });
-        learn(s, v, sid, 0.9, "self");
-        M.shift(s, v.id, "player", { trust: -0.5, why: "writes anonymous notes on the Whisper board" });
-        remember(v, s, `worked out ${s.player.name} wrote an anonymous note${aboutHer ? " about me" : ""}`, aboutHer ? 3 : 2);
-        if (aboutHer) setPlan(s, v, { kind: "confront", target: "player", rumor: sid, why: "she wrote that note about her" });
-        else if (v.bias.gossip > 0.5) setPlan(s, v, { kind: "spread", rumor: sid, why: "everyone should know who writes those notes" });
+// A woman reads the notes she hasn't read (agents.js sends her when she decides to).
+export async function readBoard(s, v, cause, ui) {
+  const live = (s.notes || []).filter((n) => s.day - n.day <= 1 && !n.readBy.includes(v.id) && n.author !== v.id).slice(0, 2);
+  for (const n of live) {
+    n.readBy.push(v.id);
+    const ev = R.emit(s, { type: "board_read", actor: v.id, place: BOARD_PLACE, at: BOARD_STAND, content: { text: n.text, note: n.id }, cause });
+    const X = n.about;
+    const aboutHer = X === v.id;
+    // who might have written it, from her own memories
+    const cands = [...A.alive(s).map((o) => o.id), ...(s.player.out ? [] : ["player"])].filter((id) => id !== v.id && id !== X);
+    const prior = { nobody: 2 };
+    const crit = { nobody: "She can't tell who wrote it" };
+    for (const c of cands) {
+      let p = 0.15;
+      for (const m of v.mem || []) {
+        const e = m.ev && R.evById(s, m.ev);
+        if (!e) continue;
+        if (e.type === "board_post" && e.actor === c && R.now(s) - (e.day * 1440 + e.minute) < 1440) p += 3;
+        if (X && (e.type === "line" || e.type === "show_line") && e.actor === c && m.about?.includes(X) && ["hostile", "cool"].includes(e.content.tone)) p += 0.8;
+        if (X && e.type === "fight" && (e.actor === c || e.targets.includes(c)) && (e.actor === X || e.targets.includes(X))) p += 1.2;
       }
-      const near = ui.distance && ui.distance(v) < 14;
-      if (near) headline(s, aboutHer ? `${first(v)} just read the note about her. She is livid.` : `${first(v)} is reading your note on the Whisper board.`, aboutHer ? "drama" : "info", ui);
-    }));
+      p += B.suspicion(s, v.id, c) * 1.5;
+      // a grudge she knows about: someone she believes has it in for the woman the note is about
+      if (X) for (const [rid, k] of Object.entries(v.knows)) { const r = s.rumors[rid]; if (k.conf >= 0.4 && r.about === c && r.prop?.obj === X && (r.harm || 0) < 0 && (r.prop.pol ?? 1) === 1) p += 1.4 * k.conf; }
+      if (X && (s.rel[c]?.[X]?.affinity ?? 0) <= -1 && (v.mem || []).some((m) => m.about?.includes(c) && m.about?.includes(X))) p += 0.5;
+      if (p > 0.4) { crit[c] = nm(s, c); prior[c] = p; }
+    }
+    const qs = { author: { type: "choice", instructions: `Who does ${nm(s, v.id)} think wrote this anonymous note: "${n.text}"?`, criteria: crit, prior } };
+    n.rids.forEach((rid, i) => { if (s.rumors[rid]) qs[`b${i}`] = { type: "score", instructions: `How much does she believe it: "${s.rumors[rid].text}"?`, criteria: ["Not at all", "Doubts it", "Half believes it", "Believes it", "Sure it's true"], prior: aboutHer ? (B.secretOf(s, v.id) && B.rootOf(s, rid) === B.secretOf(s, v.id).root ? 4 : 0.3) : 1.3 + v.bias.gossip * 0.5 - v.bias.scheme * 0.4 }; });
+    const a = await R.decide(s, v.id, view(s, v.id, { about: X, small: true, moment: `You read an anonymous note on the Whisper board: "${n.text}"` }), qs, `board:${v.id}<-${n.id}`, ev.id, (o) => `read the note "${short(n.text, 40)}"${o.author.pick !== "nobody" ? ` and thought ${nm(s, o.author.pick)} wrote it` : ""}`);
+    n.rids.forEach((rid, i) => { if (a[`b${i}`]) B.learn(s, v.id, rid, { conf: [0.05, 0.2, 0.45, 0.7, 0.9][Math.round(a[`b${i}`].value)], from: "board", ev: ev.id, root: "board", how: "read", cause: a._id }); });
+    const who = a.author.pick;
+    if (who !== "nobody") {
+      const text = `${nm(s, who)} is the one pinning anonymous notes${X ? ` about ${nm(s, X)}` : ""} on the Whisper board.`;
+      const rid = B.findClaim(s, { about: who, text }) || B.newClaim(s, { about: who, text, origin: v.id, isTrue: who === n.author, harm: -1, cat: "world", prop: { subject: who, pred: "wrote_note", obj: X, pol: 1 } });
+      B.infer(s, v.id, { from: n.rids.filter((r) => v.knows[r]), rid, conf: 0.6, why: "who else would write that", cause: a._id });
+      if (n.rids.length) B.suspect(s, v.id, who, { by: 0.2, because: [rid], why: "writing anonymous notes", cause: a._id });
+      M.shift(s, v.id, who, { trust: -0.4, why: "I think she writes those anonymous notes", cause: a._id });
+      if (aboutHer) M.pushAgenda(s, v, { kind: "confront", target: who, rumor: rid, cause: { type: "reaction", id: a._id } });
+    }
+    if (aboutHer) { M.stir(s, v, { anger: 1, why: "an anonymous note about her", cause: a._id }); ui?.emote?.(v.id, "anger"); }
+    else ui?.emote?.(v.id, "gasp");
   }
-  await Promise.all(jobs);
+}
+
+// A woman pins her own anonymous note: something she believes, or a lie she chose.
+export async function npcPost(s, v, item, cause, ui) {
+  const X = item.target;
+  const mine = Object.entries(v.knows).filter(([rid, k]) => k.conf >= 0.5 && s.rumors[rid].about === X && (s.rumors[rid].harm || 0) < 0).map(([rid]) => rid);
+  const a = await R.decide(s, v.id, view(s, v.id, { about: X, small: true, moment: `You're at the Whisper board with a pen, thinking about ${nm(s, X)}.` }), {
+    what: { type: "choice", instructions: `What does ${nm(s, v.id)} write in her anonymous note about ${nm(s, X)}?`, criteria: { ...(mine.length ? { truth: `Something she believes: ${s.rumors[mine[0]].text}` } : {}), lie: `A damaging lie about ${nm(s, X)}`, none: "Thinks better of it" }, prior: { ...(mine.length ? { truth: 2 } : {}), lie: v.bias.deceit * 1.2, none: 0.6 + v.bias.loyalty * 0.3 } },
+  }, `post:${v.id}`, cause, (o) => (o.what.pick === "none" ? "decided not to pin a note" : `pinned an anonymous note about ${nm(s, X)}`));
+  M.doneAgenda(s, v, item, a.what.pick === "none" ? "dropped" : "done", a._id);
+  if (a.what.pick === "none" || !voice.available()) return;
+  const lie = a.what.pick === "lie" ? { about: X, content: `a made-up damaging story about ${nm(s, X)}`, truth: "she made it up" } : null;
+  const intent = lie ? `write an anonymous note with a damaging lie about ${nm(s, X)}` : `write an anonymous note saying [${mine[0]}]: ${s.rumors[mine[0]].text}`;
+  const ans = await voice.turn(s, { v, view: view(s, v.id, { about: X, small: true }).payload, to: ["the whole town"], history: [], intent, lie, allowed: mine, playerName: s.player.name, setting: "You are writing an anonymous note to pin on the Whisper board. Nobody must know it's you.", words: "one or two sentences, like an anonymous note" });
+  if (!ans?.line) return;
+  const res = check(s, ans.moves || [], { line: ans.line, speaker: v.id, listeners: [] });
+  const ev = R.emit(s, { type: "board_post", actor: v.id, place: BOARD_PLACE, at: BOARD_STAND, content: { text: ans.line, anon: true }, cause: a._id });
+  const moves = res.moves.filter((m) => m.type !== "claim" || m.about).map((m) => register(s, { ...m, to: [] }, { ev: ev.id, talk: null }));
+  ev.content.moves = moves.map((m) => m.id);
+  for (const mv of moves) if (["claim", "accusation", "secret"].includes(mv.type)) { settleClaim(s, mv, { speaker: v.id, lie, ev: ev.id }); s.rumors[mv.rid].anon = true; }
+  s.notes.push({ id: R.nextId(s, "n"), ev: ev.id, text: ans.line, rids: moves.filter((m) => m.rid).map((m) => m.rid), about: X, author: v.id, day: s.day, readBy: [] });
+  if (s.notes.length > 8) s.notes.shift();
+}
+
+// ---------- cat fights ----------
+// Starting one is always a decision with a cause (a shove in a reaction round, or the
+// newcomer's own hands). The outcome is an event everyone who saw it remembers.
+async function fightFrom(s, f, ui) {
+  if (!present(s, f.by) || !present(s, f.at)) return;
+  if (f.by === "player" || f.at === "player") {
+    const other = f.by === "player" ? f.at : f.by;
+    if (ui?.fightPlayer) { ui.fightPlayer(other, f.by, f.cause); return; }
+    return brawl(s, f.by, f.at, f.cause, ui);
+  }
+  return brawl(s, f.by, f.at, f.cause, ui);
+}
+
+// a: who started it. result (only with the newcomer): "won" | "lost" | "backed_down", hers.
+export async function brawl(s, a, b, cause, ui, { result = null } = {}) {
+  if (!present(s, a) || !present(s, b)) return null;
+  for (const id of [a, b]) { const t = T.talkOf(s, id); if (t) T.end(s, t, "a cat fight broke out", cause, ui); }
+  let winner, decision = null;
+  const P = a === "player" ? a : b === "player" ? b : null;
+  if (result && P) winner = result === "won" ? "player" : P === a ? b : a;
+  else {
+    const fa = a === "player" ? null : s.people[a], fb = b === "player" ? null : s.people[b];
+    const d = await R.decide(s, "world", { payload: { fight: `${nm(s, a)} started a cat fight with ${nm(s, b)}`, fighters: [fa ? `${fa.name}: ${fa.traits.join(", ")}` : `${s.player.name}, the newcomer`, fb ? `${fb.name}: ${fb.traits.join(", ")}` : `${s.player.name}, the newcomer`] }, used: null }, {
+      winner: { type: "choice", instructions: `Who comes out of it looking better?`, criteria: { a: nm(s, a), b: nm(s, b) }, prior: { a: 0.5 + (fa ? fa.bias.nerve + fa.bias.temper * 0.5 : 1) , b: 0.5 + (fb ? fb.bias.nerve + fb.bias.temper * 0.5 : 1) } },
+    }, `fight:${a}+${b}`, cause);
+    winner = d.winner.pick === "a" ? a : b; decision = d._id;
+  }
+  const loser = winner === a ? b : a;
+  const ev = R.emit(s, { type: "fight", actor: a, targets: [b], content: { winner, backedDown: result === "backed_down" }, cause: decision ? cause : cause });
+  const c = ev.id;
+  if (a !== "player") M.shift(s, a, b, { aff: -1.3, trust: -0.3, why: `we had a cat fight (day ${s.day})`, cause: c });
+  if (b !== "player") M.shift(s, b, a, { aff: -1.5, trust: -0.5, why: "she went for me in a cat fight", cause: c });
+  for (const id of [a, b]) if (id !== "player") M.stir(s, s.people[id], { anger: 1, why: `the cat fight with ${nm(s, id === a ? b : a)}`, cause: c });
+  if (loser !== "player") M.stir(s, s.people[loser], { cheer: -1, why: "she lost a cat fight in public", cause: c });
+  if (a === "player") s.player.fights = (s.player.fights || 0) + 1; else s.people[a].fights = (s.people[a].fights || 0) + 1;
+  const where = placeName(ev.place);
+  const rid = B.newClaim(s, { about: a, text: `${nm(s, a)} started a cat fight with ${nm(s, b)} at ${where} on day ${s.day}${result === "backed_down" ? `, and ${nm(s, P)} backed down` : `, and ${nm(s, winner)} came out on top`}.`, origin: "truth", isTrue: true, harm: -1.1, kind: "fight", cat: "world", prop: { subject: a, pred: "fought", obj: b, pol: 1 } });
+  for (const p of ev.perceivers) B.learn(s, p.id, rid, { conf: p.how === "saw" ? 0.85 : 1, from: "self", ev: ev.id, root: "saw", how: "saw", cause: c });
+  ui?.fight?.(a, b, { winner });
+  const sided = { you: [], her: [], neither: [] };
+  await fanOut(s, {
+    ev, perceivers: ev.perceivers.filter((p) => p.id !== a && p.id !== b),
+    build: (W) => {
+      const w = s.people[W];
+      return {
+        view: view(s, W, { with: [a, b], small: true, moment: `You just watched ${nm(s, a)} start a cat fight with ${nm(s, b)}. ${nm(s, winner)} came out on top.` }),
+        label: `fight-seen:${W}`,
+        qs: {
+          side: { type: "choice", instructions: `Whose side does ${nm(s, W)} take?`, criteria: { a: `${nm(s, a)}, who started it`, b: nm(s, b), neither: "Neither: they're both embarrassing" }, prior: { a: Math.max(0.05, 0.3 + (s.rel[W][a]?.affinity ?? 0) * 0.4), b: Math.max(0.05, 0.8 + (s.rel[W][b]?.affinity ?? 0) * 0.4), neither: 1 + (w.bias.loyalty < 0.4 ? 0.5 : 0) } },
+          pass: { type: "noul", instructions: "Does she tell people about it later?", prior: Math.min(0.95, 0.2 + w.bias.gossip * 0.7) },
+        },
+      };
+    },
+    commit: (W, how, ans) => {
+      const side = ans.side.pick;
+      const S1 = side === "a" ? a : side === "b" ? b : null, S2 = side === "a" ? b : side === "b" ? a : null;
+      if (S1) { M.shift(s, W, S1, { aff: 0.4, why: `I took her side in the fight with ${nm(s, S2)}`, cause: ans._id }); M.shift(s, W, S2, { aff: -0.6, why: `sided against her when she fought ${nm(s, S1)}`, cause: ans._id }); }
+      else { M.shift(s, W, a, { aff: -0.3, why: `started a cat fight with ${nm(s, b)}`, cause: ans._id }); M.shift(s, W, b, { aff: -0.1, cause: ans._id }); }
+      // a friend humiliated in a fight: her friends cool on whoever beat her
+      if ((s.rel[W][loser]?.affinity ?? 0) >= 1 && winner !== W) M.shift(s, W, winner, { aff: -0.35, why: `humiliated ${nm(s, loser)} in a fight`, cause: ans._id });
+      if (ans.pass.yes) M.pushAgenda(s, s.people[W], { kind: "spread", target: null, rumor: rid, cause: { type: "reaction", id: ans._id } });
+      if (P) { const forPlayer = S1 === "player"; sided[S1 ? (forPlayer ? "you" : "her") : "neither"].push(nm(s, W)); }
+    },
+  });
+  return { ev: ev.id, winner, sided, text: s.rumors[rid].text };
+}
+
+export async function playerFight(s, id, { by, result }, ui) {
+  if (!present(s, id)) return null;
+  runtime.note({ t: "fight", id, by, result });
+  const a = by === "player" ? "player" : id, b = by === "player" ? id : "player";
+  return brawl(s, a, b, by === "player" ? "player:fight" : s.lastShoveCause || "player:fight", ui, { result });
 }
 
 // ---------- the vote ----------
-
-// ---------- words become part of the world ----------
-// What Claude wrote is read back (voice.js asks for the promises and claims in every line),
-// so nothing anyone says is just flavor: a promise becomes a plan or a vote in the book,
-// a claim becomes a story the listeners now know.
-function idByName(s, n) {
-  const low = String(n || "").toLowerCase().trim();
-  if (!low) return null;
-  if (low === s.player.name.toLowerCase() || low === "you" || low === "the newcomer") return "player";
-  if (/^(everyone|everybody|all|the crowd|the town)$/.test(low)) return "everyone";
-  const v = Object.values(s.people).find((p) => first(p).toLowerCase() === low || p.name.toLowerCase() === low);
-  return v?.id || null;
+// Each ballot is a Jev decision on the voter's own view, with the reasons that weighed most
+// kept with it (the page shows those, nothing else).
+function ballotReasons(s, v, id, finale) {
+  const out = [];
+  const r = s.rel[v.id][id];
+  if (!finale && v.votePlan?.target === id && v.votePlan.why) out.push(v.votePlan.why);
+  for (const c of M.openBy(s, v.id, (c) => ["vote", "told_vote"].includes(c.kind) && c.target === id)) out.push(`told ${nm(s, c.to)} she would${c.sincere ? "" : " (and meant it this time)"}`);
+  const why = (r?.why || []).filter((x) => (finale ? x.sign > 0 : x.sign < 0)).slice(0, 2).map((x) => x.text);
+  out.push(...why);
+  // what she owes her pulls the other way, and the ballot weighs both
+  if (!finale && (r?.debt || 0) >= 0.4) { const good = (r.why || []).find((x) => x.sign > 0); out.push(`but she owes her${good ? ` (${good.text})` : " a favor"}`); }
+  const bel = Object.entries(v.knows).filter(([rid, k]) => k.conf >= 0.5 && s.rumors[rid].about === id && (finale ? (s.rumors[rid].harm || 0) > 0 : (s.rumors[rid].harm || 0) < -0.4)).map(([rid]) => s.rumors[rid].text).slice(-1);
+  out.push(...bel.map((t) => `heard: ${t}`));
+  if (!out.length) out.push(finale ? `she ${M.feel(r?.affinity ?? 0)} her` : `she ${M.feel(r?.affinity ?? 0)} her and ${M.trustWord(r?.trust ?? 0)} her`);
+  return [...new Set(out)].slice(0, 3);
 }
 
-export function bindWords(s, facts, { speakers, listeners, ui }) {
-  if (!facts?.length) return;
-  const names = Object.fromEntries([...alive(s).map((p) => [p.id, first(p)]), ["player", s.player.name]]);
-  for (const f of facts) {
-    const by = idByName(s, f.by);
-    if (!by || by === "player" || !speakers.includes(by) || !s.people[by] || s.people[by].gone) continue; // the player's own words are read from what she types
-    const other = idByName(s, f.to);
-    const hearers = listeners.filter((x) => x !== by);
-    if (f.type === "WILL") {
-      const to = other && other !== "everyone" && other !== by && hearers.includes(other) ? other : hearers[0];
-      if (to) bindPromise(s, s.people[by], to, readDeed(f.what, names), f.what, hearers);
-    } else if (f.type === "CLAIM" && other && other !== "everyone" && other !== by) bindClaim(s, by, other, f.what, hearers, ui);
-  }
-}
-
-function bindPromise(s, v, to, deed, what, heard) {
-  const target = deed.target === v.id ? null : deed.target;
-  if (deed.kind === "vote") {
-    if (!target || (target !== "player" && (!s.people[target] || s.people[target].gone))) return;
-    if (M.openBy(s, v.id, (c) => c.to === to && ["vote", "told_vote"].includes(c.kind) && c.target === target).length) return; // already in the book (maybe as a lie)
-    M.commit(s, { by: v.id, to, kind: "vote", target, what, heard });
-    M.planVote(s, v, target, v.votePlan?.target === target ? v.votePlan.why : `told ${firstOf(s, to)} she would`, { strength: 1.5, promisedTo: to });
-    remember(v, s, `told ${firstOf(s, to)} I'd vote out ${firstOf(s, target)}`, 2);
-  } else if (deed.kind === "pact") {
-    M.commit(s, { by: v.id, to, kind: "pact", what, heard, sincere: alliancesOf(s, v.id).some((a) => a.members.includes(to) && a.sincere[v.id]) || !alliancesOf(s, v.id).some((a) => a.members.includes(to)) });
-  } else if (deed.kind !== "other" && (target || ["spread", "report"].includes(deed.kind))) {
-    if (target === to) { M.commit(s, { by: v.id, to, kind: deed.kind, target, what, heard }); return; } // something to do with the listener herself: kept in the book
-    setPlan(s, v, { kind: deed.kind, target, why: `told ${firstOf(s, to)} she would`, promisedTo: to, said: what });
-  } else M.commit(s, { by: v.id, to, kind: "other", target, what, heard });
-}
-
-function bindClaim(s, by, about, text, hearers, ui) {
-  if (about !== "player" && (!s.people[about] || s.people[about].gone)) return;
-  // the story she told, if it's one already going round
-  let rid = Object.keys(s.rumors).find((id) => s.rumors[id].about === about && (s.people[by].knows[id] || s.rumors[id].origin === by ? overlap(s.rumors[id].text, text) >= 0.5 : overlap(s.rumors[id].text, text) >= 0.75));
-  if (!rid) {
-    const names = Object.fromEntries([...alive(s).map((p) => [p.id, first(p)]), ["player", s.player.name]]);
-    const tone = readLine(text, { names }).toSubject;
-    rid = newRumor(s, { about, text, origin: by, isTrue: null, harm: clamp(tone * 1.5, -2, 1.5) });
-    learn(s, s.people[by], rid, 0.9, "self");
-  }
-  for (const h of hearers) {
-    if (h === "player") playerHears(s, rid, by, "told", ui);
-    else if (s.people[h] && !s.people[h].gone && h !== about) learn(s, s.people[h], rid, Math.max(0.15, Math.min(0.85, 0.4 + s.rel[h][by].trust * 0.12)), by);
-  }
-}
-
-// Every cast member decides who to vote out. Jev weighs pacts, promises, grudges, threat and gossip.
-const brawls = (s, id) => (id === "player" ? s.player.fights : s.people[id]?.fights) || 0;
 export async function castVotes(s, candidates, voters, { finale = false } = {}) {
   const out = {};
-  await Promise.all(voters.map(async (v) => {
+  s.ballotWhy ??= {};
+  await Promise.all(voters.map(async (v0) => {
+    const v = typeof v0 === "string" ? s.people[v0] : v0;
     const opts = candidates.filter((id) => id !== v.id);
     if (!opts.length) return;
     const criteria = {}, prior = {};
-    const coming = M.threatsTo(s, v);
+    const st = (await import("./views.js")).standing(s, v.id);
     for (const id of opts) {
-      const r = s.rel[v.id][id];
-      const reasons = M.reasonsText(s, r, 2);
-      const ally = alliancesOf(s, v.id).find((a) => a.members.includes(id));
-      // pact partners share their plans: who in her pact means to vote this woman out
-      const bloc = finale ? [] : alliancesOf(s, v.id).flatMap((a) => a.members).filter((m, i, arr) => m !== v.id && m !== "player" && arr.indexOf(m) === i && !s.people[m]?.gone && s.people[m]?.votePlan?.target === id);
-      const said = Object.entries(v.knows).filter(([rid, k]) => s.rumors[rid].about === id && k.conf >= 0.4).map(([rid]) => s.rumors[rid].text).slice(-2);
-      criteria[id] = `${finale ? "Crown" : "Vote out"} ${nameOf(s, id)}: ${first(v)} ${feel(r.affinity)} her and ${trust(r.trust)} her${ally ? `; they have a secret pact${ally.sincere[v.id] ? "" : " she never meant"}` : ""}${said.length ? `; she has heard: ${said.join(" / ")}` : ""}${reasons ? `; why: ${reasons}` : ""}${coming.has(id) && !finale ? `; ${coming.get(id)}` : ""}${bloc.length ? `; her pact partner${bloc.length > 1 ? "s" : ""} ${bloc.map((m) => firstOf(s, m)).join(" and ")} mean${bloc.length > 1 ? "" : "s"} to vote her out` : ""}${!finale ? `; how well liked she is in town: ${popularity(s, id).toFixed(1)} of 3` : ""}${id === "player" && s.looks?.[v.id] ? `; ${first(v)} ${opinionText(s, v.id)}` : ""}${brawls(s, id) ? `; she has started ${brawls(s, id)} cat fight${brawls(s, id) > 1 ? "s" : ""}` : ""}`;
-      if (finale) prior[id] = Math.max(0.05, 1.5 + r.affinity + r.trust * 0.5);
-      else prior[id] = Math.max(0.05, 0.6 + Math.max(0, -r.affinity) * 1.6 + Math.max(0, -r.trust) * 0.6 - (ally ? (ally.sincere[v.id] ? 2.5 * v.bias.loyalty : 0) : 0) + (v.votePlan?.target === id ? 1.5 + (v.votePlan.strength ?? 1.5) * 1.2 + (v.votePlan.promisedTo ? v.bias.loyalty * 1.5 : 0) : 0) + (coming.has(id) ? 1.2 + (1 - v.bias.loyalty) : 0) + Math.max(0, popularity(s, id)) * v.bias.scheme * 1.2 + bloc.length * (0.8 + 1.6 * v.bias.loyalty) + brawls(s, id) * 0.35 + (id === "player" && s.looks?.[v.id]?.threat ? 1 + v.bias.scheme : 0));
+      const r = s.rel[v.id][id] || M.newRel(0, 0);
+      const reasons = ballotReasons(s, v, id, finale);
+      criteria[id] = `${finale ? "Crown" : "Vote out"} ${nameOf(s, id)} (${reasons.join("; ")})`;
+      if (finale) prior[id] = Math.max(0.05, 1.5 + r.affinity + r.trust * 0.5 + r.respect * 0.4);
+      else {
+        const ally = s.alliances.find((al) => al.members.includes(v.id) && al.members.includes(id) && al.loyal?.[v.id] !== false);
+        const owed = M.openBy(s, v.id, (c) => ["vote", "told_vote"].includes(c.kind) && c.target === id && c.sincere && !c.wavered);
+        prior[id] = Math.max(0.05, 0.6 + Math.max(0, -r.affinity) * 1.6 + Math.max(0, -r.trust) * 0.6 + r.fear * 0.3 - (r.debt || 0) * 0.5 - (ally ? 2.5 * v.bias.loyalty : 0)
+          + (v.votePlan?.target === id ? 1.5 + (v.votePlan.strength ?? 1.5) * 1.2 : 0) + owed.reduce((t, c) => t + (0.6 + c.level * 0.4 + v.bias.loyalty) * (c.kind === "vote" ? 1 : 0.5), 0)
+          + (st.threats.includes(id) ? 1.2 + (1 - v.bias.loyalty) : 0) + ((id === "player" ? s.player.fights : s.people[id]?.fights) || 0) * 0.35
+          + (id === "player" && s.looks?.[v.id]?.threat ? 1 + v.bias.scheme : 0) + B.suspicion(s, v.id, id) * 1.2);
+      }
     }
-    // every vote promise she made, to the newcomer or anyone else; votes are public
-    const owed = M.openBy(s, v.id, (c) => ["vote", "told_vote"].includes(c.kind) && candidates.includes(c.target));
-    const promised = owed.map((c) => `${c.kind === "vote" ? "promised" : "told"} ${nameOf(s, c.to)} she would vote out ${nameOf(s, c.target)}${c.sincere ? "" : " (a lie)"}; votes are public, so breaking it will be noticed`);
-    for (const c of owed) if (c.sincere && prior[c.target] != null) prior[c.target] += (c.kind === "vote" ? 1 : 0.5) * (0.5 + v.bias.loyalty * 1.5) * (s.rel[v.id][c.to]?.affinity > 0 || c.to === "player" && s.rel[v.id].player.affinity > 0 ? 1 : 0.4);
-    const j = await jev.ask({ ...persona(s, v), promises_made: promised, ballot: finale ? "the finale: as a voted-out woman on the jury, she picks who wins the season" : "tonight's vote: she secretly names one woman to send home" }, {
-      vote: { type: "choice", instructions: finale ? `${first(v)} was voted out earlier and now sits on the jury. Who does she crown the winner? Bitterness, respect and who played her all count.` : `Who does ${first(v)} vote out tonight? This is a cutthroat reality show: she votes the way this woman really would, out of strategy, grudges, fear and loyalty. She may break promises and betray allies if it suits her.`, criteria, prior },
-    }, `vote:${v.id}`);
-    out[v.id] = j.vote.pick;
-    const pr = s.rel[v.id][j.vote.pick];
-    (s.ballotWhy ??= {})[v.id] = v.votePlan?.target === j.vote.pick ? v.votePlan.why : M.reasonsText(s, pr, 1).replace(/ \(day \d+\)$/, "") || `she ${feel(pr?.affinity ?? 0)} her`;
+    const a = await R.decide(s, v.id, view(s, v.id, { moment: finale ? "The finale: as a woman voted out earlier, you sit on the jury and name the woman who should win the season." : "Vote night at the firepit. You secretly name one woman to send home." }), {
+      vote: { type: "choice", instructions: finale ? `Who does ${nm(s, v.id)} crown the winner? Bitterness, respect and who played her all count.` : `Who does ${nm(s, v.id)} vote out tonight? She votes the way this woman really would: strategy, grudges, fear, loyalty and her promises. Votes are read out in public.`, criteria, prior },
+    }, `ballot:${v.id}`, s.votes.length ? `rule:vote` : "rule:vote", (o) => `${finale ? "crowned" : "voted out"} ${nameOf(s, o.vote.pick)}`);
+    out[v.id] = a.vote.pick;
+    const reasons = ballotReasons(s, v, a.vote.pick, finale);
+    s.ballotWhy[v.id] = { decision: a._id, target: a.vote.pick, reasons };
+    const d = R.decisionById(s, a._id);
+    if (d) d.reasons = reasons;
   }));
   return out;
 }
 
-// Apply the result of a vote: votes are public, so everyone now knows who came for whom.
-export function applyVote(s, ballots, outId, ui) {
+// The reveal: every ballot is read out in public, so everyone at the firepit learns who
+// came for whom and judges it against what was promised.
+export async function applyVote(s, ballots, outId, ui, { lines = {} } = {}) {
+  const at = { x: -26, z: -37 };
+  const crowd = () => [...A.alive(s).map((v) => ({ id: v.id, how: "overheard" })), ...(s.player.out ? [] : [{ id: "player", how: "overheard" }])];
+  const evs = {}, pactBreaks = [];
   for (const [voter, target] of Object.entries(ballots)) {
-    if (target === "player" || !s.people[target]) continue;
-    M.shift(s, target, voter, { aff: -1, trust: -0.4, why: "voted to send me home" });
-    // a vote from inside your own pact is a betrayal
-    const pact = alliancesOf(s, target).find((a) => a.members.includes(voter));
-    if (pact) {
-      M.shift(s, target, voter, { trust: -1.5, aff: -0.8, why: `voted against me despite our pact (${pact.name})` });
-      remember(s.people[target], s, `${firstOf(s, voter)} voted against me even though we had a pact`, 3);
+    const why = voter === "player" ? null : s.ballotWhy?.[voter];
+    const ev = R.emit(s, { type: "ballot", actor: voter, targets: [target], place: "firepit", at, public: true, perceivers: crowd(), content: { target, line: lines[voter] || null, reasons: why?.reasons || null }, cause: why?.decision || (voter === "player" ? "player:vote" : "rule:vote") });
+    evs[voter] = ev;
+    const said = s.ballotMoves?.[voter];
+    if (said && lines[voter] && said.line === lines[voter]) sayInPublic(s, voter, ev, said.line, said.moves);
+    // a ballot is a fact about a mind everyone now knows
+    const rid = B.newClaim(s, { about: voter, text: `${nameOf(s, voter)} voted to send ${nameOf(s, target)} home on day ${s.day}.`, origin: "truth", isTrue: true, harm: -0.3, kind: "vote", cat: "mind", prop: { subject: voter, pred: "voted", obj: target, pol: 1 } });
+    for (const p of ev.perceivers) B.learn(s, p.id, rid, { conf: 1, from: "self", ev: ev.id, root: "saw", how: "overheard", cause: ev.id });
+    if (target !== "player" && s.people[target] && !s.people[target].gone) M.shift(s, target, voter, { aff: -1, trust: -0.4, why: "voted to send me home", cause: ev.id });
+    const pact = s.alliances.find((al) => al.members.includes(target) && al.members.includes(voter));
+    if (pact && target !== "player" && s.people[target]) {
+      M.shift(s, target, voter, { trust: -1.5, aff: -0.8, why: `voted against me despite our pact (${pact.name})`, cause: ev.id });
+      M.reweigh(s, target, ev.id, 5, ev.id);
       pact.members = pact.members.filter((m) => m !== voter);
-      delete pact.sincere[voter];
+      pact.history.push({ day: s.day, minute: s.minute, what: `${voter} voted against ${target}: out of the pact`, cause: ev.id });
+      R.change(s, { who: voter, what: "alliance", key: pact.id, from: "member", to: "betrayed", cause: ev.id });
+      pactBreaks.push({ by: voter, of: target, pact: pact.id });
+      A.betrayed(s, target, ev.id);
     }
   }
-  // every vote promise anyone made (the newcomer's too): votes are public, so it's settled now
+  // every vote pledge is settled now, in front of everyone
+  const settled = [];
   for (const c of (s.ledger || []).filter((c) => c.status === "open" && ["vote", "told_vote"].includes(c.kind))) {
     const actual = ballots[c.by];
-    if (!actual) { if (c.target === outId || (c.target !== "player" && s.people[c.target]?.gone)) M.settle(s, c, "dropped", `${nameOf(s, c.target)} was already gone`); continue; }
-    const to = c.to === "player" ? null : s.people[c.to];
-    if (actual === c.target) {
-      M.settle(s, c, "kept");
-      if (to && !to.gone) M.shift(s, to.id, c.by, { trust: 0.3, why: c.kind === "vote" ? "kept her word at the vote" : null });
-      continue;
-    }
-    const why = c.by === "player" ? `voted for ${firstOf(s, actual)} instead` : `voted for ${firstOf(s, actual)} instead${s.ballotWhy?.[c.by] ? ` (${s.ballotWhy[c.by]})` : ""}`;
-    M.settle(s, c, "broken", why);
-    if (!to || to.gone) continue;
-    const big = c.kind === "vote";
-    M.shift(s, to.id, c.by, { trust: big ? -1.2 : -0.6, aff: big ? -0.5 : -0.25, why: `said she'd vote out ${firstOf(s, c.target)}, then ${why}` });
-    remember(to, s, `${firstOf(s, c.by)} ${big ? "promised" : "told me"} she'd vote out ${firstOf(s, c.target)} and ${why}`, big ? 3 : 2);
-    for (const w of c.heard) if (w !== to.id && s.people[w] && !s.people[w].gone) M.shift(s, w, c.by, { trust: -0.3 });
+    const ev = evs[c.by];
+    if (!actual) { M.settle(s, c, "impossible", `${nameOf(s, c.by)} had no vote tonight`, "rule:vote"); continue; }
+    if (c.target !== "player" && (!s.people[c.target] || s.people[c.target].gone) && c.target !== outId) { M.settle(s, c, "impossible", `${nameOf(s, c.target)} was already gone`, ev.id); continue; }
+    if (actual === c.target) { M.settle(s, c, "kept", "voted as she said", ev.id); settled.push({ c, kept: true, ev }); continue; }
+    const why = c.by === "player" ? `voted for ${nameOf(s, actual)} instead` : `voted for ${nameOf(s, actual)} instead${!c.sincere ? " (she never meant it)" : c.wavered ? ` (${c.wavered.why})` : ""}`;
+    M.settle(s, c, "broken", why, c.by === "player" ? ev.id : c.wavered?.decision || s.ballotWhy?.[c.by]?.decision || ev.id);
+    settled.push({ c, kept: false, ev, actual });
   }
-  // voting alongside someone brings you closer
+  // what the pledges mean to the people who knew about them
+  for (const { c, kept, ev, actual } of settled) {
+    const knowers = new Set([c.to, ...c.heard]);
+    const big = c.kind === "vote";
+    let rid = null;
+    if (!kept) rid = B.newClaim(s, { about: c.by, text: `${nameOf(s, c.by)} told ${nameOf(s, c.to)} she'd vote out ${nameOf(s, c.target)}, then voted for ${nameOf(s, actual)}.`, origin: "truth", isTrue: true, harm: -1.2, kind: "broken", cat: "world", prop: { subject: c.by, pred: "broke_word", obj: c.to, pol: 1 } });
+    for (const w of knowers) {
+      if (w === c.by || !present(s, w)) continue;
+      if (rid) B.learn(s, w, rid, { conf: 1, from: "self", ev: ev.id, root: "saw", how: "overheard", cause: ev.id });
+      if (w === "player") continue;
+      if (kept) M.shift(s, w, c.by, { trust: w === c.to ? 0.3 : 0.1, why: w === c.to && big ? "kept her word at the vote" : null, cause: ev.id });
+      else {
+        M.shift(s, w, c.by, { trust: w === c.to ? (big ? -1.2 : -0.6) : -0.3, aff: w === c.to ? (big ? -0.5 : -0.25) : 0, why: w === c.to ? `said she'd vote out ${nameOf(s, c.target)}, then voted for ${nameOf(s, actual)}` : `broke her word to ${nameOf(s, c.to)}`, cause: ev.id });
+        if (w === c.to) { M.reweigh(s, w, ev.id, big ? 4 : 3, ev.id); B.suspect(s, w, c.by, { by: 0.35, because: [rid], why: "broke her word at the vote", cause: ev.id }); A.betrayed(s, w, ev.id); }
+      }
+    }
+  }
+  // voting the same way brings women closer
   const byTarget = {};
   for (const [voter, target] of Object.entries(ballots)) (byTarget[target] ||= []).push(voter);
-  for (const group of Object.values(byTarget)) for (const x of group) for (const y of group) if (x !== y && x !== "player") M.shift(s, x, y, { aff: 0.3, trust: 0.2, why: `voted the same way on day ${s.day}` });
-  // broken promises to the player
-  const betrayals = [];
-  for (const p of s.player.promises.filter((p) => p.kind === "vote" && p.day > s.day - SHOW.voteEvery)) {
-    const actual = ballots[p.by];
-    if (actual && actual !== p.target) betrayals.push({ by: p.by, promised: p.target, voted: actual });
-  }
-  for (const p of s.player.promises.filter((p) => p.kind === "alliance")) {
-    if (ballots[p.by] === "player") betrayals.push({ by: p.by, promised: "alliance", voted: "player" });
-  }
-  // the person voted out
-  if (outId === "player") {
-    s.player.out = true;
-  } else if (s.people[outId]) {
+  for (const group of Object.values(byTarget)) for (const x of group) for (const y of group) if (x !== y && x !== "player" && present(s, x)) M.shift(s, x, y, { aff: 0.3, trust: 0.2, why: `voted the same way on day ${s.day}`, cause: evs[y].id });
+  const betrayals = settled.filter((x) => !x.kept && x.c.to === "player").map((x) => ({ by: x.c.by, promised: x.c.target, voted: x.actual }));
+  // the woman voted out leaves, and her knowledge with her
+  const elim = R.emit(s, { type: "elimination", actor: outId === "player" ? "player" : outId, targets: [], place: "firepit", at, public: true, perceivers: crowd(), content: { out: outId }, cause: evs[Object.keys(evs)[0]]?.id || "rule:vote" });
+  if (outId === "player") s.player.out = true;
+  else if (s.people[outId]) {
     const v = s.people[outId];
     v.gone = true; v.out = true; v.outDay = s.day; v.location = "gone";
-    for (const o of alive(s)) if (o.votePlan?.target === outId) o.votePlan = null;
+    for (const t of Object.values(s.talks)) if (t.status === "active" && (t.a === outId || t.b === outId)) T.end(s, t, "she was voted out", elim.id, ui);
   }
-  for (const v of alive(s)) if (v.votePlan && (v.votePlan.target === outId)) v.votePlan = null;
-  for (const v of alive(s)) { if (v.votePlan) v.votePlan.promisedTo = null; M.prunePlans(s, v); }
-  for (const v of alive(s)) remember(v, s, `the vote sent ${nameOf(s, outId)} home; ${Object.entries(ballots).filter(([, t]) => t === v.id).map(([x]) => firstOf(s, x)).join(", ") || "nobody"} voted for me`, 3);
-  const rec = { day: s.day, ballots, out: outId, betrayals };
+  for (const v of A.alive(s)) {
+    if (v.votePlan && (v.votePlan.target === outId || ballots[v.id] === v.votePlan.target)) M.dropVotePlan(s, v, elim.id);
+    for (const it of [...(v.agenda || [])]) if (it.target === outId) M.doneAgenda(s, v, it, "impossible", elim.id);
+    for (const g of v.goals || []) if (g.target === outId) M.setGoal(s, v, { kind: g.kind, target: g.target, w: 0, why: "she's gone", cause: elim.id });
+    v.goals = (v.goals || []).filter((g) => g.w > 0);
+    if (!v.goals.length) A.seedGoals(s, v, elim.id);
+  }
+  for (const c of (s.ledger || []).filter((c) => c.status === "open" && (c.target === outId || c.to === outId || c.by === outId))) M.settle(s, c, "impossible", `${nameOf(s, outId)} was voted out`, elim.id);
+  // her knowledge leaves with her: secrets she knew have one knower fewer
+  for (const sec of Object.values(s.secrets || {})) B.syncSecrets(s, sec.rid);
+  const rec = { day: s.day, ballots, out: outId, betrayals, pactBreaks, reasons: Object.fromEntries(Object.entries(s.ballotWhy || {}).filter(([id]) => ballots[id]).map(([id, w]) => [id, w.reasons])), decisions: Object.fromEntries(Object.entries(s.ballotWhy || {}).filter(([id]) => ballots[id]).map(([id, w]) => [id, w.decision])), ev: elim.id };
   s.votes.push(rec);
-  headline(s, `${nameOf(s, outId)} was voted out of Gossiptown.`, "vote", ui);
+  s.ballotWhy = {}; s.ballotMoves = {};
   return rec;
 }
 
-// ---------- end of the day ----------
-
-export async function endOfDay(s, ui) {
-  const lines = [];
-  const outcomes = await Promise.all(alive(s).map(async (v) => {
-    const criteria = { carry_on: "Carries on as usual tomorrow" };
-    const prior = { carry_on: 5 };
-    if (v.employer && v.employed && s.people[v.employer] && !s.people[v.employer].gone) { criteria.quit = `Quits working for ${s.people[v.employer].name}`; prior.quit = s.rel[v.id][v.employer].affinity < -1 ? 1 : 0.1; }
-    const staff = alive(s).filter((o) => o.employer === v.id && o.employed);
-    for (const e of staff) {
-      const bad = Object.entries(v.knows).some(([id, k]) => s.rumors[id].about === e.id && s.rumors[id].harm <= -1 && k.conf >= 0.5);
-      criteria[`fire_${e.id}`] = `Fires ${e.name}`; prior[`fire_${e.id}`] = bad ? 2.5 : s.rel[v.id][e.id].affinity < -1 ? 0.6 : 0.05;
-    }
-    // who she might decide about tonight: the women (and newcomer) she dislikes most,
-    // anyone she thinks is coming for her, someone she might team up with
-    const others = candidatesFor(s, v);
-    const relTo = (id) => s.rel[v.id][id];
-    const coming = M.threatsTo(s, v);
-    const disliked = others.filter((id) => relTo(id).affinity < -0.6 || relTo(id).trust < -1.2 || coming.has(id)).sort((p, q) => relTo(p).affinity - relTo(q).affinity).slice(0, 3);
-    const why = (id) => [M.reasonsText(s, relTo(id), 2), coming.get(id)].filter(Boolean).join("; ") || feel(relTo(id).affinity);
-    for (const id of disliked) {
-      criteria[`vote_${id}`] = `Decides ${nameOf(s, id)} has to go at the next vote (${why(id)})`;
-      prior[`vote_${id}`] = Math.max(0.1, -relTo(id).affinity * 0.9 - Math.min(0, relTo(id).trust) * 0.4 + (coming.has(id) ? 1.5 : 0) + Math.max(0, popularity(s, id)) * v.bias.scheme) * (v.votePlan?.target === id ? 1.6 : 1) * (id === "player" ? 1 : 1);
-    }
-    const worst = disliked.find((id) => id !== "player" && relTo(id).affinity < -1);
-    if (worst) { criteria[`peace_${worst}`] = `Decides to make peace with ${nameOf(s, worst)}`; prior[`peace_${worst}`] = 0.3 * v.bias.loyalty + (coming.size >= 2 ? 0.4 : 0); }
-    const fresh = disliked.find((id) => (relTo(id).why || []).some((x) => x.day === s.day && x.w >= 1 && x.sign < 0));
-    if (fresh) { criteria[`confront_${fresh}`] = `Decides to have it out with ${nameOf(s, fresh)} tomorrow (${why(fresh)})`; prior[`confront_${fresh}`] = v.bias.temper * 1.2 + v.mood.anger * 0.3; }
-    const mine = alliancesOf(s, v.id);
-    const friend = others.filter((id) => id !== "player" && relTo(id).affinity > 0.8 && !mine.some((a) => a.members.includes(id))).sort((p, q) => relTo(q).affinity - relTo(p).affinity)[0];
-    if (friend) { criteria[`recruit_${friend}`] = `Decides to ask ${nameOf(s, friend)} to team up for the votes`; prior[`recruit_${friend}`] = v.bias.scheme * 0.8 + (coming.size && !mine.length ? 1 : 0); }
-    const j = await jev.ask({ ...persona(s, v), day_summary: v.memory.slice(-10), on_newcomer: feelings(s, v, "player"), feelings_about: disliked.concat(friend ? [friend] : []).map((id) => feelings(s, v, id === "player" ? "player" : s.people[id])) },
-      { outcome: { type: "choice", instructions: `Lying awake tonight, going over the day, what does ${first(v)} decide?`, criteria, prior } }, `night:${v.id}`);
-    return [v, j.outcome.pick];
-  }));
-  for (const [v, out] of outcomes) {
-    const [kind, id] = out.includes("_") ? [out.slice(0, out.indexOf("_")), out.slice(out.indexOf("_") + 1)] : [out, null];
-    if (out === "quit") { v.employed = false; lines.push(`${v.name} quit working for ${s.people[v.employer].name}.`); headline(s, `${first(v)} quit working for ${first(s.people[v.employer])}.`, "drama", ui, { witnessed: false }); }
-    else if (kind === "fire") { const e = s.people[id]; e.employed = false; M.stir(e, { anger: 2, why: `${first(v)} fired her` }); M.shift(s, e.id, v.id, { aff: -2, why: "fired me" }); remember(e, s, `${first(v)} fired me`, 3); lines.push(`${v.name} fired ${e.name}.`); headline(s, `${first(v)} fired ${first(e)}.`, "drama", ui, { witnessed: false }); }
-    else if (kind === "vote") { M.planVote(s, v, id, id === "player" ? `she has had enough of ${s.player.name}` : `decided overnight: ${M.reasonsText(s, s.rel[v.id][id], 1) || "she can't stand her"}`, { strength: 2 }); remember(v, s, `decided ${nameOf(s, id)} has to go`, 2); }
-    else if (kind === "peace") { M.shift(s, v.id, id, { aff: 0.6, why: "decided to bury the hatchet" }); setPlan(s, v, { kind: "make_peace", target: id, why: "she decided overnight" }); }
-    else if (kind === "confront") setPlan(s, v, { kind: "confront", target: id, why: M.reasonsText(s, s.rel[v.id][id], 1) || "she has had enough" });
-    else if (kind === "recruit") setPlan(s, v, { kind: "recruit", target: id, why: "she needs allies before the next vote" });
-  }
-  M.sleep(s);
-  return lines;
+// Ballot lines, written from each voter's own reasons (the decision's), said in public.
+export async function ballotLines(s, ballots, { finale = false } = {}) {
+  const items = Object.entries(ballots).filter(([id]) => id !== "player" && s.people[id]).map(([id, target]) => ({ v: s.people[id], target: firstOf(s, target), why: (s.ballotWhy?.[id]?.reasons || []).join("; ") || "her own reasons" }));
+  const got = await voice.ballotLines(s, { items, playerName: s.player.name, finale });
+  s.ballotMoves = Object.fromEntries(Object.entries(got).map(([id, x]) => [id, { line: x.line, moves: x.moves }]));
+  return Object.fromEntries(Object.entries(got).map(([id, x]) => [id, x.line]));
 }
 
-// What the player can read about how people feel: only visible cues, never the raw numbers.
-export function vibe(s, id) {
-  const r = s.rel[id]?.player;
-  if (!r) return "";
-  if (r.affinity >= 1.5) return "adores you";
-  if (r.affinity >= 0.6) return "likes you";
-  if (r.affinity <= -1.5) return "can't stand you";
-  if (r.affinity <= -0.6) return "is cold to you";
-  if (r.trust <= -1.2) return "doesn't trust you";
-  return "unsure about you";
+// What a woman says as she's said out loud in front of everyone counts like anything else she says.
+function sayInPublic(s, by, ev, line, raw) {
+  const res = check(s, raw || [], { line, speaker: by, listeners: ev.targets || [] });
+  for (const r of res.rejects) logReject(s, by, line, r, false);
+  const moves = res.moves.filter((mv) => grounded(s, by, mv).ok).map((mv) => register(s, { ...mv, to: mv.to?.length ? mv.to : ev.targets || [] }, { ev: ev.id, talk: null }));
+  ev.content.moves = moves.map((m) => m.id);
+  for (const mv of moves) if (["claim", "accusation", "secret"].includes(mv.type)) settleClaim(s, mv, { speaker: by, lie: null, ev: ev.id });
+  return moves;
+}
+
+// The woman voted out gets one last word on her way out: a real line, said to everyone,
+// and what she says (a parting accusation, a secret spilled) lands like anything else.
+export async function partingShot(s, id, ui) {
+  const v = s.people[id];
+  if (!v) return null;
+  const last = [...s.votes].reverse().find((x) => x.out === id);
+  const votedBy = last ? Object.entries(last.ballots).filter(([, t]) => t === id).map(([w]) => firstOf(s, w)) : [];
+  const betrayedBy = (s.ledger || []).filter((c) => c.to === id && c.status === "broken" && c.day >= s.day - 1).map((c) => firstOf(s, c.by));
+  const got = await voice.partingShot(s, { v, view: view(s, id, { moment: "voted out" }), playerName: s.player.name, votedBy, betrayedBy });
+  if (!got?.line) return null;
+  const crowd = [...A.alive(s).map((w) => ({ id: w.id, how: "overheard" })), ...(s.player.out ? [] : [{ id: "player", how: "overheard" }])];
+  const ev = R.emit(s, { type: "line", actor: id, targets: [], place: "firepit", at: { x: -26, z: -37 }, public: true, perceivers: crowd, content: { text: got.line, parting: true }, cause: last?.ev || "rule:vote" });
+  const moves = sayInPublic(s, id, ev, got.line, got.moves);
+  ui?.parting?.(s, id, got.line);
+  return { line: got.line, moves: moves.map((m) => m.id), ev: ev.id };
+}
+
+// ---------- the end of the day ----------
+// Promises whose moment passed are closed with a cause; feelings and moods settle overnight.
+export async function endOfDay(s, ui) {
+  s.minute = Math.max(s.minute, 20 * 60);
+  for (const t of Object.values(s.talks)) if (t.status === "active") T.end(s, t, "the day was over", "rule:clock", ui);
+  await T.flushUnjudged(s, ui);
+  A.lapse(s);
+  M.driftFeelings(s, 10);
+  for (const v of A.alive(s)) M.driftMood(s, v, 10);
+  return [];
+}
+
+// Morning: everyone wakes up at home.
+export function dawn(s) {
+  for (const v of A.alive(s)) { A.place(s, v, "home", "rule:night"); v.until = 0; }
+  s.player.location = "lane";
+  s.player.talkingTo = null;
+}
+
+// keep the play link's save small: old events lose their heavy fields
+export function prune(s, keepDays = 2) {
+  R.pruneTrace(s, keepDays);
+  R.pruneDecisions(s, keepDays);
+  if (s.world.length > 6000) s.world.splice(0, s.world.length - 6000);
+  if (s.moves.length > 3000) s.moves.splice(0, s.moves.length - 3000);
+  if (s.decisions.length > 4000) s.decisions.splice(0, s.decisions.length - 4000);
+}
+
+// ---------- the end-of-season reveal ----------
+// What was really going on, built only from the world log, the decision log and the ledger.
+// Every item carries the id of the event or decision it comes from.
+export function reveal(s) {
+  const out = [];
+  const add = (kind, text, cause, who = null) => out.push({ kind, text, cause, who });
+  for (const sec of Object.values(s.secrets || {})) {
+    const r = s.rumors[sec.rid];
+    if (!r) continue;
+    add("secret", `${nameOf(s, sec.owner)}'s secret: ${r.text}`, r.ev || "rule:history", sec.owner);
+  }
+  for (const l of s.lies || []) {
+    if (l.by === "player") continue;
+    const r = s.rumors[l.rid];
+    if (!r) continue;
+    const to = (l.to || []).map((x) => nameOf(s, x)).join(" and ") || "everyone";
+    add("lie", `${nameOf(s, l.by)} lied to ${to} on day ${l.day}: "${r.text}" (${l.truth}).`, l.ev, l.by);
+  }
+  for (const c of s.ledger || []) {
+    if (c.to !== "player" || c.status === "open" || c.status === "kept") continue;
+    add("promise", `${nameOf(s, c.by)} told you she would ${M.deedText(s, c, { by: false })} and ${c.status === "broken" ? "didn't" : "dropped it"}${c.why ? `: ${c.why}` : ""}${c.sincere ? "" : ". She never meant it"}.`, c.settleCause || c.cause, c.by);
+  }
+  for (const v of s.votes || []) for (const [id, reasons] of Object.entries(v.reasons || {})) {
+    add("ballot", `Night ${v.day}: ${nameOf(s, id)} voted for ${nameOf(s, v.ballots[id])} because ${reasons.join("; ")}.`, v.decisions?.[id] || v.ev, id);
+  }
+  const heard = new Set((s.player.heard || []).map((h) => h.rid));
+  for (const r of Object.values(s.rumors)) {
+    if (r.about !== "player" || heard.has(r.id)) continue;
+    const knew = Object.values(s.people).filter((v) => v.knows[r.id]?.conf >= 0.4).map((v) => nameOf(s, v.id));
+    if (!knew.length) continue;
+    const ev = s.world.find((e) => e.content?.moves && (s.moves || []).some((m) => m.rid === r.id && e.content.moves.includes(m.id)));
+    const first = Object.values(s.people).map((v) => v.knows[r.id]?.chain?.[0]?.ev).find(Boolean);
+    add("behind", `Said behind your back (you never heard it): "${r.text}" Believed by ${knew.join(", ")}.`, ev?.id || r.ev || first || "rule:gossip", null);
+  }
+  return out;
 }

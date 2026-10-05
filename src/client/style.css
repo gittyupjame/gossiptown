@@ -308,3 +308,4 @@ body.cinema #hud, body.cinema #hint, body.cinema #chyron { opacity: 0; pointer-e
   .wd-tab span { display: none; }
   .wd-items { overflow: visible; }
 }
+.end-list.reveal{max-height:38vh;overflow:auto;text-align:left}.end-list.reveal p{margin:.25em 0}

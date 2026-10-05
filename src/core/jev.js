@@ -16,6 +16,9 @@
 //   key:   "apikey_..." call api.typesafe.ai straight from the browser
 //   neither             the offline stand-in
 
+import { rand, seedFrom } from "./rng.js";
+import * as runtime from "./runtime.js";
+
 const DIRECT = "https://api.typesafe.ai/v1/systemone";
 const MODEL = "jev-latest";
 
@@ -39,27 +42,33 @@ export function status() {
   return { live: true, label: "Jev", why: stats.real ? `${stats.real} live calls` : "connected" };
 }
 
+// Every call goes through the runtime: held while paused, recorded for replay, and the
+// sampling happens after the answer is in, from the season's seeded dice.
 export async function ask(state, questions, label = "") {
   stats.calls++;
   const t0 = performance.now();
-  let raw = null;
-  const canTry = (cfg.proxy || cfg.key) && (!failedAt || Date.now() - failedAt > 60000);
-  if (canTry) {
-    try {
-      raw = await callJev(state, questions);
-      stats.real++;
-      failedAt = 0;
-    } catch (e) {
-      failedAt = Date.now();
-      lastError = e.message;
-      console.warn("[jev] falling back to the stand-in:", e.message);
+  let live = false;
+  const raw = await runtime.call("jev", async (key) => {
+    const canTry = (cfg.proxy || cfg.key) && (!failedAt || Date.now() - failedAt > 60000);
+    if (canTry) {
+      try {
+        const r = await callJev(state, questions);
+        stats.real++; failedAt = 0; live = true;
+        return r;
+      } catch (e) {
+        failedAt = Date.now();
+        lastError = e.message;
+        console.warn("[jev] falling back to the stand-in:", e.message);
+      }
     }
-  }
-  const live = !!raw;
-  if (!raw) { raw = standIn(questions); stats.standIn++; }
-  stats.ms += performance.now() - t0;
+    stats.standIn++;
+    return standIn(questions, key);
+  });
+  const ms = performance.now() - t0;
+  stats.ms += ms;
+  runtime.timed("jev", ms);
   const out = {};
-  for (const [k, q] of Object.entries(questions)) out[k] = normalize(q, raw[k]);
+  for (const [k, q] of Object.entries(questions)) out[k] = normalize(q, raw?.[k]);
   recent.push({ label, live, state, answers: out });
   hook?.(state, questions, label, out);
   if (recent.length > 60) recent.shift();
@@ -95,7 +104,7 @@ async function callJev(state, questions) {
 export function sample(probs) {
   const entries = Object.entries(probs);
   const total = entries.reduce((s, [, p]) => s + p, 0) || 1;
-  let r = Math.random() * total;
+  let r = rand() * total;
   for (const [k, p] of entries) { r -= p; if (r <= 0) return k; }
   return entries.at(-1)[0];
 }
@@ -123,27 +132,40 @@ function normalize(q, a = {}) {
     return { value, level: q.criteria[Math.round(value)] };
   }
   const p = typeof a.noul === "number" ? a.noul : 0.5;
-  return { p, yes: Math.random() < p };
+  return { p, yes: rand() < p };
 }
 
 // ---- offline stand-in: the priors with some noise, in the same shapes as Jev ----
 
-const jitter = (x, amt) => Math.max(0.001, x * (1 + (Math.random() - 0.5) * amt));
+// its own dice, seeded from the season and the call, so it never shifts the town's own dice
+let seed = "gossiptown";
+export function setSeed(x) { seed = String(x); }
+function dice(key) {
+  let st = seedFrom(`${seed}|${key}`);
+  return () => {
+    let t = (st = (st + 0x6d2b79f5) >>> 0);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-function standIn(questions) {
+function standIn(questions, key = "") {
+  const r = dice(key);
+  const jitter = (x, amt) => Math.max(0.001, x * (1 + (r() - 0.5) * amt));
   const out = {};
   for (const [k, q] of Object.entries(questions)) {
     if (q.type === "choice") {
       const keys = Object.keys(q.criteria);
       const w = q.prior || {};
-      const probs = Object.fromEntries(keys.map((key) => [key, jitter(w[key] ?? 1, 0.6)]));
+      const probs = Object.fromEntries(keys.map((key2) => [key2, jitter(Math.max(0, w[key2] ?? 1), 0.6)]));
       const tot = Object.values(probs).reduce((s, p) => s + p, 0);
-      for (const key of keys) probs[key] /= tot;
+      for (const key2 of keys) probs[key2] /= tot;
       out[k] = { probabilities: probs };
     } else if (q.type === "score") {
       const n = q.criteria.length;
       const center = q.prior ?? (n - 1) / 2;
-      out[k] = { score: Math.max(0, Math.min(n - 1, center + (Math.random() - 0.5) * 1.2)) };
+      out[k] = { score: Math.max(0, Math.min(n - 1, center + (r() - 0.5) * 1.2)) };
     } else {
       out[k] = { noul: Math.max(0.01, Math.min(0.99, jitter(q.prior ?? 0.5, 0.3))) };
     }

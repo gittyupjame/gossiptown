@@ -6,7 +6,6 @@ import * as THREE from "three";
 import * as B from "./bubbles.js";
 import * as H from "./hud.js";
 import * as L from "./layout.js";
-import * as voice from "../core/voice.js";
 import * as sim from "../core/sim.js";
 import * as E from "../core/events.js";
 import * as audio from "./audio.js";
@@ -14,7 +13,6 @@ import { PLACES } from "../core/cast.js";
 import { scene, toon, outlineMat } from "./scene.js";
 
 const FACE = { loved: "heart", amused: "laugh", unmoved: null, cringed: "cringe", offended: "anger" };
-const HOSTILE = new Set(["call_out", "roast", "backhanded", "name_vote", "spill"]);
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
 export async function runShow(ctx) {
@@ -66,9 +64,9 @@ export async function runShow(ctx) {
 
   // ---------- the show itself ----------
   let fought = false;
-  const play = async (act, line, { context } = {}) => {
+  const play = async (act) => {
     // the crowd decides how it landed, and their faces show it
-    const res = await E.crowdReacts(s, act, ctx.ui, { line });
+    const res = await E.crowdReacts(s, act);
     wide();
     await ctx.wait(350);
     audio.crowd(res.tally);
@@ -77,25 +75,45 @@ export async function runShow(ctx) {
     await ctx.wait(1700);
     if (res.snap && !fought) {
       fought = true;
+      const at = res.snapAt || act.by;
       await hostSay(pick(["Oh no. Oh no no no.", "Ladies! LADIES!", "Somebody get the cameras closer!"]), 1500);
-      if (act.by === "player") await ctx.playerFight(res.snap, res.snap);
-      else await sim.brawl(s, s.people[res.snap], s.people[act.by], ev.place, { ...ctx.ui, fight: (a, b, o) => ctx.npcFight(a, b, o) }, true).then(() => ctx.wait(3600));
-      for (const id of [res.snap, act.by]) { const w = ctx.walker(id); w.x = seatOf[id].x; w.z = seatOf[id].z; w.face = { x: stage.x, z: stage.z }; }
+      if (at === "player" || res.snap === "player") await ctx.playerFight(res.snap === "player" ? at : res.snap, res.snap);
+      else await sim.brawl(s, res.snap, at, res.snapCause || act.ev, { ...ctx.ui, fight: (a, b, o) => ctx.npcFight(a, b, o) }).then(() => ctx.wait(3600));
+      for (const id of [res.snap, at]) { if (!seatOf[id]) continue; const w = ctx.walker(id); w.x = seatOf[id].x; w.z = seatOf[id].z; w.face = { x: stage.x, z: stage.z }; }
       wide();
       await hostSay(pick(["...And that's showbiz, ladies.", "Well! THAT'S going in the highlight reel.", "Moving on. Quickly."]), 1800);
     }
     return res;
   };
 
-  // A woman (or you) takes the floor: walks up, speaks, the crowd reacts.
-  const speak = async (id, act, line) => {
+  // Her words: written from her own view and the act Jev chose, checked, then said in front
+  // of everyone. With no dialogue available she says nothing (nothing is faked).
+  const npcSays = async (act, context = "") => {
+    const d = await E.draft(s, act, { context });
+    if (!d) return null;
+    await E.deliver(s, act, d);
+    return d.line;
+  };
+  // A woman takes the floor: walks up, speaks, the crowd reacts.
+  const speak = async (id, act, context) => {
+    const lineP = npcSays(act, context);
     const w = ctx.walker(id);
     w.goTo(stage.x, stage.z);
     await walkUp(ctx, w, stage);
     w.face = { x: front.x, z: front.z };
     close(id);
-    await sayAndWait(ctx, id, line, null, color, id === "player" ? s.player.name : first(id));
-    return play(act, line);
+    const line = await lineP;
+    if (!line) { B.emote(id, "question"); await ctx.wait(1200); return null; }
+    await sayAndWait(ctx, id, line, null, color, first(id));
+    return play(act);
+  };
+  // she answers from where she sits
+  const answer = async (id, act, context) => {
+    const line = await npcSays(act, context);
+    if (!line) return null;
+    close(id);
+    await sayAndWait(ctx, id, line, null, color, first(id));
+    return play(act);
   };
   const sitDown = (id) => { const w = ctx.walker(id); w.goTo(seatOf[id].x, seatOf[id].z); setTimeout(() => { w.face = { x: stage.x, z: stage.z }; }, 1600); };
 
@@ -110,92 +128,76 @@ export async function runShow(ctx) {
     pw.face = { x: front.x, z: front.z };
     return text;
   };
+  const youSay = async (text, opts) => {
+    B.say("player", text, { name: s.player.name, color: color("player"), you: true, hold: 3 });
+    const actP = E.playerAct(s, text, opts);
+    await ctx.wait(Math.max(1600, text.length * 40));
+    return play(await actP);
+  };
 
   if (f.kind === "hotseat") {
     const seat = lineup.seat, rid = lineup.rumor;
     const story = rid ? s.rumors[rid].text : null;
-    await hostSay(pick([`Today's lucky lady in the Hot Seat is... ${first(seat)}!`, `${first(seat)}, darling. Take a seat. The hot one.`]));
+    await hostSay(pick([`Today's lucky lady in the Hot Seat is... ${seat === "player" ? s.player.name : first(seat)}!`, `${seat === "player" ? s.player.name : first(seat)}, darling. Take a seat. The hot one.`]));
     const sw = ctx.walker(seat);
     sw.goTo(stage.x, stage.z);
     await walkUp(ctx, sw, stage);
     sw.face = { x: front.x, z: front.z };
-    E.readOut(s, rid, ctx.ui);
+    E.readOut(s, rid);
     await hostSay(story ? `Word around town is... "${story}"` : `Everybody in this town seems to have a problem with you. Why is that?`, 3600);
     await hostSay(pick(["Well? Is it true?", "Care to explain yourself?", "The town wants to know."]), 1600);
-    let answer;
     if (seat === "player") {
       const text = await yourTurn(f.you, "Enter to answer · empty Enter to say nothing");
-      answer = await E.playerAct(s, text, { seatRumor: rid });
-      if (text) { B.say("player", text, { name: s.player.name, color: color("player"), you: true, hold: 3 }); await ctx.wait(Math.max(1600, text.length * 40)); }
-      else await hostSay("Nothing? Silence speaks volumes, darling.", 1800);
-      await play(answer, text);
+      if (text) await youSay(text, { seatRumor: rid });
+      else { await hostSay("Nothing? Silence speaks volumes, darling.", 1800); await play(await E.playerAct(s, "", { seatRumor: rid })); }
     } else {
-      answer = await E.seatAnswer(s, seat, rid);
-      const line = await voice.showLine({ v: s.people[seat], title: f.title, blurb: f.blurb, place, what: E.actText(s, answer), context: story ? `Primrose just read out what the town says about you: "${story}"` : "Primrose asks why everyone has a problem with you.", playerName: s.player.name });
-      close(seat);
-      await sayAndWait(ctx, seat, line, null, color, first(seat));
-      await play(answer, line);
+      const act = await E.seatAnswer(s, seat, rid);
+      await answer(seat, act, story ? `Primrose just read out what the town says about you: "${story}"` : "Primrose asks why everyone has a problem with you.");
     }
     // the crowd pipes up
     const pipes = await E.pipeUp(s, seat);
-    for (const p of pipes) {
-      const line = await voice.showLine({ v: s.people[p.by], title: f.title, blurb: f.blurb, place, what: p.pipe === "heckle" ? `heckle ${first(seat)} from the crowd` : `stick up for ${first(seat)} from the crowd`, context: story ? `${first(seat)} is in the Hot Seat over: "${story}"` : "", playerName: s.player.name });
-      close(p.by);
-      await sayAndWait(ctx, p.by, line, null, color, first(p.by));
-      await play(p, line);
-    }
+    for (const p of pipes) if (!fought) await answer(p.by, p, story ? `${seat === "player" ? s.player.name : first(seat)} is in the Hot Seat over: "${story}"` : "");
     if (seat !== "player" && !s.player.out) {
       await hostSay(`${s.player.name}? Anything to say to ${first(seat)}?`, 1600);
       const text = await yourTurn(`Chime in about ${first(seat)}…`, "Enter to say it · empty Enter to stay out of it");
-      if (text) {
-        B.say("player", text, { name: s.player.name, color: color("player"), you: true, hold: 3 });
-        await ctx.wait(Math.max(1600, text.length * 40));
-        await play(await E.playerAct(s, text, { defaultSubject: seat }), text);
-      }
+      if (text) await youSay(text, { defaultSubject: seat });
     }
     sitDown(seat);
   } else {
-    // decide every woman's move now and write all their lines while Primrose warms up
+    // every woman's move is decided up front (her own view, at the moment she's handed the floor)
     const npcs = lineup.order.filter((id) => id !== "player");
     const acts = Object.fromEntries(await Promise.all(npcs.map(async (id) => [id, await E.npcAct(s, id, { assigned: lineup.assigned[id] })])));
-    const linesP = voice.showLines({ items: npcs.map((id) => ({ v: s.people[id], what: E.actText(s, acts[id]) })), title: f.title, blurb: f.blurb, place, playerName: s.player.name }).catch(() => ({}));
-    // what they say in front of everyone counts: promises and claims made on stage are heard by the whole crowd
-    linesP.then((o) => sim.bindWords(s, o.facts, { speakers: npcs, listeners: [...sim.alive(s).filter((v) => v.location === ev.place).map((v) => v.id), "player"], ui: ctx.ui }));
     for (const id of lineup.order) {
       if (id !== "player" && s.people[id]?.gone) continue;
       const assigned = lineup.assigned[id];
       await hostSay(pick(f.turn(id === "player" ? s.player.name : first(id), assigned ? (assigned === "player" ? s.player.name : first(assigned)) : "")), 1800);
-      let act, line;
+      let act;
       if (id === "player") {
         const pw = ctx.walker("player");
         pw.goTo(stage.x, stage.z);
         await walkUp(ctx, pw, stage);
         const text = await yourTurn(f.you, "Enter to say it · empty Enter to pass");
-        act = await E.playerAct(s, text, { assigned });
-        if (!text) { await hostSay(pick(["Nothing? Boring!", "Wow. Riveting. Sit down, sweetie.", "The silent type. Noted."]), 1600); }
-        else { B.say("player", text, { name: s.player.name, color: color("player"), you: true, hold: 3.2 }); await ctx.wait(Math.max(1800, text.length * 42)); }
-        await play(act, text);
+        if (!text) { await hostSay(pick(["Nothing? Boring!", "Wow. Riveting. Sit down, sweetie.", "The silent type. Noted."]), 1600); act = await E.playerAct(s, "", { assigned }); }
+        else {
+          B.say("player", text, { name: s.player.name, color: color("player"), you: true, hold: 3.2 });
+          const actP = E.playerAct(s, text, { assigned });
+          await ctx.wait(Math.max(1800, text.length * 42));
+          act = await actP;
+          await play(act);
+        }
       } else {
         act = acts[id];
-        line = (await linesP)[id] || voice.phrase.show({ v: s.people[id], what: E.actText(s, act) });
-        await speak(id, act, line);
+        await speak(id, act);
       }
       // the woman she went for gets to answer
-      if (f.rebuttal && act.subject && HOSTILE.has(act.kind) && !fought && (act.subject === "player" || !s.people[act.subject]?.gone)) {
+      if (f.rebuttal && act?.ev && act.subject && E.HOSTILE.has(act.kind) && !fought && (act.subject === "player" || !s.people[act.subject]?.gone)) {
         if (act.subject === "player") {
           await hostSay(`Ooh. ${s.player.name}, your response?`, 1500);
           const text = await yourTurn(`Answer ${first(id)}…`, "Enter to fire back · empty Enter to let it go");
-          if (text) {
-            B.say("player", text, { name: s.player.name, color: color("player"), you: true, hold: 3 });
-            await ctx.wait(Math.max(1600, text.length * 40));
-            await play(await E.playerAct(s, text, { defaultSubject: id }), text);
-          }
+          if (text) await youSay(text, { defaultSubject: id });
         } else {
           const rb = await E.rebuttal(s, act.subject, act);
-          const rline = await voice.showLine({ v: s.people[act.subject], title: f.title, blurb: f.blurb, place, what: rb.answer === "fire_back" ? `fire right back at ${first(id)}` : rb.answer === "sorry" ? `apologize to ${first(id)}` : E.actText(s, rb), context: `${id === "player" ? s.player.name : first(id)} just ${E.actText(s, act)}.`, playerName: s.player.name });
-          close(act.subject);
-          await sayAndWait(ctx, act.subject, rline, null, color, first(act.subject));
-          await play(rb, rline);
+          await answer(act.subject, rb, `${id === "player" ? s.player.name : first(id)} just said, in front of everyone: "${act.line}"`);
         }
       }
       sitDown(id);

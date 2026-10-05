@@ -1,0 +1,1078 @@
+{
+ "when": "2026-10-05T01:43:37.168Z",
+ "total": 153,
+ "passed": 153,
+ "results": [
+  {
+   "id": "EVT-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "204 lines, 0 fights, 6 votes, 10 looks each map to one event",
+   "ms": 6768
+  },
+  {
+   "id": "EVT-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "0 acted events with nobody perceiving, 0 with an unknown \"how\" (of 1809)",
+   "ms": 1
+  },
+  {
+   "id": "EVT-3",
+   "kind": "audit",
+   "pass": true,
+   "detail": "0 events changed after commit; ids strictly increasing (1809 checked)",
+   "ms": 6
+  },
+  {
+   "id": "EVT-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "canary in world log: true; in 0/5707 Jev payloads and 0/860 prompts",
+   "ms": 10
+  },
+  {
+   "id": "EVT-5",
+   "kind": "inspect",
+   "pass": true,
+   "detail": "20 types, frozen true, version 1 on every event: true; unknown: 0",
+   "ms": 1
+  },
+  {
+   "id": "PRC-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "every move takes travel time; jumps only for announced gatherings (rule: causes)",
+   "ms": 0
+  },
+  {
+   "id": "PRC-2",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "2 m: overheard, 8 m: partial, 40 m: none; partial words: \"… on … again.\"",
+   "ms": 11
+  },
+  {
+   "id": "PRC-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "partial memory \"Brenna sold the smithy's best anvil … for …\"; belief flagged partial: true; conf 0.03 vs full hearer 0.22",
+   "ms": 21
+  },
+  {
+   "id": "PRC-4",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "watcher's memory: \"saw Brenna whispering with Pippa at the plaza\" (saw, words: none)",
+   "ms": 2
+  },
+  {
+   "id": "PRC-5",
+   "kind": "audit",
+   "pass": true,
+   "detail": "509 Jev \"keep it quiet\" decisions; bystanders per line: secrets 3.60 (n=666) vs other 3.75 (n=2722)",
+   "ms": 16766
+  },
+  {
+   "id": "PRC-6",
+   "kind": "audit",
+   "pass": true,
+   "detail": "17 show lines; missing attendee memories: 0 ",
+   "ms": 2
+  },
+  {
+   "id": "MEM-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "13512 perceptions; 0 without a matching memory ",
+   "ms": 6
+  },
+  {
+   "id": "MEM-2",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "her memory: \"Odette said to me at the plaza: \"Brenna has been watering down the cider at the tavern.\"\"; claim stored false: true; lie record: true; event text unchanged",
+   "ms": 4
+  },
+  {
+   "id": "MEM-3",
+   "kind": "audit",
+   "pass": true,
+   "detail": "fights/votes about her: min weight 4 (n=55); small talk: mean 1.33, max 2 (n=9)",
+   "ms": 5
+  },
+  {
+   "id": "MEM-4",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "exact words in her memory: true; in her view when she next talks with Wren: true",
+   "ms": 4
+  },
+  {
+   "id": "MEM-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "with Juniper: \"Juniper read my tea leaves\"; with Odette: \"Odette snubbed me at the bakery\"",
+   "ms": 1
+  },
+  {
+   "id": "MEM-6",
+   "kind": "audit",
+   "pass": true,
+   "detail": "cap 70: 0 over; 297 summaries, each citing the memories it replaced (0 bad)",
+   "ms": 3
+  },
+  {
+   "id": "MEM-7",
+   "kind": "audit",
+   "pass": true,
+   "detail": "561 heavy memories kept whole; 0 heavy memories folded into summaries",
+   "ms": 0
+  },
+  {
+   "id": "BEL-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "2211 beliefs; 0 missing a field ",
+   "ms": 3
+  },
+  {
+   "id": "BEL-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "4/4 women hold world, trait and mind beliefs",
+   "ms": 0
+  },
+  {
+   "id": "BEL-3",
+   "kind": "audit",
+   "pass": true,
+   "detail": "3297 source links; 0 not ending at an event she perceived or a logged inference ",
+   "ms": 18
+  },
+  {
+   "id": "BEL-4",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "mean confidence from a trusted friend 0.47 vs from a rival 0.08 (6 seeds)",
+   "ms": 38
+  },
+  {
+   "id": "BEL-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "twice from one teller: 0.52; once each from two unconnected tellers: 0.70",
+   "ms": 1
+  },
+  {
+   "id": "BEL-6",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "6/6 seeds resolved to one belief and/or a suspicion, with the resolution logged. e.g. resolution \"switch\"; confidences 0.15 vs 0.48; suspicion of a teller (or of Brenna) 0.12",
+   "ms": 35
+  },
+  {
+   "id": "BEL-7",
+   "kind": "audit",
+   "pass": true,
+   "detail": "3322 inferences; 0 without the beliefs they came from; all capped below sight: true",
+   "ms": 3
+  },
+  {
+   "id": "BEL-8",
+   "kind": "audit",
+   "pass": true,
+   "detail": "10 secrets, owner + true content + knower set; 0 out of sync",
+   "ms": 1
+  },
+  {
+   "id": "SPR-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "0 beliefs from outside the in-world channels; by channel: {\"history\":47,\"line\":2121,\"inference\":474,\"show_line\":28,\"ballot\":625,\"outfit\":2}",
+   "ms": 17
+  },
+  {
+   "id": "SPR-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "282 retellings; 0 without a logged decision to say it",
+   "ms": 11
+  },
+  {
+   "id": "SPR-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "109 retellings changed the story across 5 seeded seasons; both versions stored for 109",
+   "ms": 2
+  },
+  {
+   "id": "SPR-4",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "told a lie about herself second-hand, Pippa suspects the original teller (Odette) in 6/6 seeds",
+   "ms": 21
+  },
+  {
+   "id": "SPR-5",
+   "kind": "audit",
+   "pass": true,
+   "detail": "correlation of juiciness with retellings 0.09 over 1213 stories; retold on their first day 745, two or more days old 246",
+   "ms": 6
+  },
+  {
+   "id": "SPR-6",
+   "kind": "inspect",
+   "pass": true,
+   "detail": "reach for every story (823); e.g. \"Sylvie has been stealing coins from the Crooked Ke\": 5 believe, 0 doubt, 5 heard",
+   "ms": 4
+  },
+  {
+   "id": "TLK-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "848/848 spoken lines were written by the dialogue model (no canned lines); talks that ended silently without a reason: 0",
+   "ms": 2
+  },
+  {
+   "id": "TLK-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "201 lines by women; 0 without her own intent decision ",
+   "ms": 46
+  },
+  {
+   "id": "TLK-3",
+   "kind": "audit",
+   "pass": true,
+   "detail": "5997 prompts for women who never learned a given secret; 0 contained it",
+   "ms": 157
+  },
+  {
+   "id": "TLK-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "1550 committed claims by women; 0 with no matching belief or chosen lie (regenerated 16, gave up and cancelled 2)",
+   "ms": 34
+  },
+  {
+   "id": "TLK-5",
+   "kind": "inspect",
+   "pass": true,
+   "detail": "every prompt carries her own voice and traits (848 prompts, 10 distinct voices); a blind rater needs the live model (not in this headless run)",
+   "ms": 2
+  },
+  {
+   "id": "TLK-6",
+   "kind": "audit",
+   "pass": true,
+   "detail": "off-screen lines 1762 (1.10 moves/line) vs on-screen 1649 (1.12); talk-length cap bound 12x; spend ceiling bound in 0 of 0 hours",
+   "ms": 0
+  },
+  {
+   "id": "TLK-7",
+   "kind": "audit",
+   "pass": true,
+   "detail": "37 talks opened by women (10 with the newcomer), 3 by the newcomer; 0 without a decision and reason",
+   "ms": 8
+  },
+  {
+   "id": "TLK-8",
+   "kind": "audit",
+   "pass": true,
+   "detail": "40 ended talks, 0 without a stored reason; top: X wrapped it up (20), X never answered (9), the vote bell rang (4), X stormed off (3)",
+   "ms": 0
+  },
+  {
+   "id": "TLK-9",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "interruption stored: true; the next line (celeste) was written knowing \"Odette just walked up and can hear you.\"",
+   "ms": 4
+  },
+  {
+   "id": "MOV-1",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "extracted 13 of 13 move types",
+   "ms": 2
+  },
+  {
+   "id": "MOV-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "893 moves; 0 missing speaker/addressee/subject/content or a span of the real words",
+   "ms": 10
+  },
+  {
+   "id": "MOV-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "bad move logged: \"span is not words from the line\" (retry true); re-extracted from the words; committed insult: true",
+   "ms": 6
+  },
+  {
+   "id": "MOV-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "2328 (move, listener) pairs; 0 without a judgment ",
+   "ms": 13
+  },
+  {
+   "id": "MOV-5",
+   "kind": "audit",
+   "pass": true,
+   "detail": "3190 judgments: 2428 changed her state, 762 stored as heard and dismissed, 0 neither; 5976 trace entries cite a move",
+   "ms": 4
+  },
+  {
+   "id": "MOV-6",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "three paraphrases -> vote:sylvie, vote:sylvie, vote:sylvie; Wren's belief she means it: 0.38, 0.38, 0.38",
+   "ms": 14
+  },
+  {
+   "id": "MOV-7",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "Hesper overheard it, judged it (d6); her liking for Sylvie 0.30 -> 0.25",
+   "ms": 2
+  },
+  {
+   "id": "MOV-8",
+   "kind": "audit",
+   "pass": true,
+   "detail": "small-talk lines 444 of 3422 (13%, ceiling 35%)",
+   "ms": 0
+  },
+  {
+   "id": "CMT-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "344 promise/plan/threat moves and 106 agreed requests; 0 without a full commitment record ",
+   "ms": 6
+  },
+  {
+   "id": "CMT-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "383 commitments made in play by women (plus 30 from backstory); 0 without her own sincerity decision ",
+   "ms": 38
+  },
+  {
+   "id": "CMT-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 81: Brenna meant it (d2); talk with Juniper opened (you meant to talk to Juniper about Odette); her moves about Odette: true; prompt carried the topic: true; commitment kept",
+   "ms": 48
+  },
+  {
+   "id": "CMT-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "319 commitments closed without being kept (broken 309, impossible 10); 0 without a cause pointer",
+   "ms": 24
+  },
+  {
+   "id": "CMT-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "whispered: kept-probability 0.76, broken 6/24; at the show: 0.91, broken 3/24",
+   "ms": 70
+  },
+  {
+   "id": "CMT-6",
+   "kind": "audit",
+   "pass": true,
+   "detail": "309 commitments with a deadline; 0 still open after it passed ",
+   "ms": 1
+  },
+  {
+   "id": "CMT-7",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "pledge broken; Wren knows \"Celeste Belrose told Wren Tallow she'd vote out Pippa Fennel, then voted for Juniper Reed.\"; it's a weighty memory (4): true",
+   "ms": 3
+  },
+  {
+   "id": "CMT-8",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "trust in Celeste: Wren (promised) 0.30 -> -0.70; Hesper (heard it) 0.30 -> 0.20; Brenna (didn't know) -1.50 -> -1.50; it's now gossip Hesper holds: true",
+   "ms": 2
+  },
+  {
+   "id": "CMT-9",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "Odette's answer was written knowing her stored cover story (\"say it slipped her mind\")",
+   "ms": 3
+  },
+  {
+   "id": "CMT-10",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "8 promisees over 4 towns: 8 ended up holding both of Sylvie's vote promises; 6 concluded she's telling different people different things (a Jev judgment each); mean suspicion of Sylvie 0.33",
+   "ms": 17
+  },
+  {
+   "id": "GOL-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "34 women at season ends, 0 without an active goal; goal lists that ever emptied: 0",
+   "ms": 10
+  },
+  {
+   "id": "GOL-2",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "Pippa's top goal before: protect; after hearing she's a target: survive (survive 2.9, guard_secret 2.5, protect:brenna 2.5, protect:marigold 2.0, ally:brenna 1.6)",
+   "ms": 3
+  },
+  {
+   "id": "GOL-3",
+   "kind": "audit",
+   "pass": true,
+   "detail": "1455 agenda items added; 0 not citing a goal, commitment, reaction or decision",
+   "ms": 77
+  },
+  {
+   "id": "GOL-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "1459 actions by women; 0 without a cause; moved by the show's own clock: none",
+   "ms": 62
+  },
+  {
+   "id": "GOL-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 95: Sylvie's agenda led with \"gift\"; after overhearing the insult, \"confront Odette, now\" went to the front (d3)",
+   "ms": 8
+  },
+  {
+   "id": "GOL-6",
+   "kind": "audit",
+   "pass": true,
+   "detail": "opposed pairs (65): 0.92 talks and 5.11 hostile moves each; other pairs (160): 0.68 talks and 1.74 hostile moves each (talks are only kept for the last 40)",
+   "ms": 18
+  },
+  {
+   "id": "DEC-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "26372 choices; 9868 picked something other than the most likely option; picked frequency vs probability by decile: 0.03->0.03 0.14->0.14 0.24->0.24 0.35->0.35 0.45->0.44 0.55->0.54 0.65->0.65 0.75->0.76 0.86->0.86 0.93->0.93 (worst gap 0.013)",
+   "ms": 105
+  },
+  {
+   "id": "DEC-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "5707 payloads; world-log fields found: none; fields used: the_show, recent_shows, you, personality, nature, taste_in_clothes, mood, where, also_around, your_goals, your_vote, where_you_stand, people, what_you_believe, what_you_remember, promises, right_now, her_own_look, newcomer_look, you_recently_decided, you_mean_to",
+   "ms": 83
+  },
+  {
+   "id": "DEC-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "Wren's probability of voting Sylvie out: no slights 0.109, after three small digs 0.310",
+   "ms": 5
+  },
+  {
+   "id": "DEC-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "908 changes of mind about the vote; 0 within three hours with nothing new in between ",
+   "ms": 178
+  },
+  {
+   "id": "DEC-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "the same flowers from the newcomer: to a friend {\"pleased\":9,\"suspicious\":1} (liking 0.07), to a rival {\"pleased\":2,\"insulted\":1,\"suspicious\":7} (liking -0.07)",
+   "ms": 35
+  },
+  {
+   "id": "DEC-6",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "raising trust in Celeste raised the probability of saying yes in 18/18 sampled cases (0.33<0.44<0.56, 0.16<0.28<0.40, 0.33<0.44<0.56, 0.38<0.51<0.65 ...)",
+   "ms": 98
+  },
+  {
+   "id": "DEC-7",
+   "kind": "audit",
+   "pass": true,
+   "detail": "15379 judgments and actions; 0 not linked to a logged decision with its question, options, probabilities, pick and inputs ",
+   "ms": 505
+  },
+  {
+   "id": "FAN-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "7729 (event, perceiver) pairs with real moves; 0 without her reaction request ",
+   "ms": 59
+  },
+  {
+   "id": "FAN-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "359 rounds with several perceivers (up to 7 at once); the latest request started at most 2 ms after the first",
+   "ms": 1
+  },
+  {
+   "id": "FAN-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "claim about her: expected questions; claim about another: expected questions; vote pledge: expected questions; gift: expected questions (claim about her asks believe/liar/payback/feel; gift asks like/motive, and owing follows from liking)",
+   "ms": 4
+  },
+  {
+   "id": "FAN-4",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 241: Juniper and Wren both decided to go after Odette right away; Juniper goes now (d7), Wren goes after her (d3, queued after juniper)",
+   "ms": 6
+  },
+  {
+   "id": "FAN-5",
+   "kind": "audit",
+   "pass": true,
+   "detail": "952 visible reactions started rounds of their own, chains up to 4 deep; the depth cap bound 9 times in 4551 rounds",
+   "ms": 0
+  },
+  {
+   "id": "FAN-6",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "a public insult of a well-liked woman, 6 towns: 7 reactions on the spot (gasps, walk-offs, stepping in now) and 5 queued for later; timing is part of each woman's answer",
+   "ms": 23
+  },
+  {
+   "id": "FAN-7",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "nervous Marigold at 6:30pm on vote day: delivery 0.82, Hesper senses the lie p=0.24, caught 2/12; practiced Odette at 9am: delivery 3.14, p=0.02, caught 0/12",
+   "ms": 68
+  },
+  {
+   "id": "FAN-8",
+   "kind": "audit",
+   "pass": true,
+   "detail": "1410 woman-hours; 0 without a reconsideration ()",
+   "ms": 8
+  },
+  {
+   "id": "REL-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "45 pairs stored both ways with liking, trust, respect, fear and debt; 44 where A's view of B differs from B's view of A",
+   "ms": 0
+  },
+  {
+   "id": "REL-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "66120 relationship changes; 0 without a cause ",
+   "ms": 3504
+  },
+  {
+   "id": "REL-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "Pippa on Odette after a threat: fear 0.00 -> 0.58, liking 0.30 -> -0.60, trust 0.30 -> 0.30",
+   "ms": 3
+  },
+  {
+   "id": "REL-4",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "Wren's anger 0.00 -> 0.80 after being insulted; the chance she says yes to Celeste's next request 0.44 -> 0.33; her mood (and why) is in every view she decides and speaks from",
+   "ms": 5
+  },
+  {
+   "id": "REL-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "Hesper owes Celeste 0.90 after a cupcake she loves; chance she grants Celeste's next ask: 0.42 without the gift, 0.75 with it",
+   "ms": 13
+  },
+  {
+   "id": "REL-6",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "2 fights Marigold lost: her friends' liking for Sylvie changed by -0.65, -0.92, -0.92, -0.92",
+   "ms": 5
+  },
+  {
+   "id": "SOC-1",
+   "kind": "inspect",
+   "pass": true,
+   "detail": "the inspector's per-woman reputation varies by more than a point of liking for 4/4 women (Marigold: brenna 0.97, juniper -0.04, tansy 1.22; Brenna: marigold 0.05, juniper -2.23, tansy 0.35)",
+   "ms": 5
+  },
+  {
+   "id": "SOC-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "28 alliances; 0 member entries without a commitment record and private loyalty ",
+   "ms": 1
+  },
+  {
+   "id": "SOC-3",
+   "kind": "audit",
+   "pass": true,
+   "detail": "447 alliance changes; 0 without a cause ",
+   "ms": 42
+  },
+  {
+   "id": "SOC-4",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "Juniper sets out to win an ally in 3/10 towns when she believes nobody is in her corner, 0/10 when she has a pact",
+   "ms": 34
+  },
+  {
+   "id": "SOC-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "the crowd's liking for the newcomer after a warm toast: 7/10 warmed, mean 0.19; after insulting everyone: mean -0.06",
+   "ms": 6
+  },
+  {
+   "id": "SOC-6",
+   "kind": "audit",
+   "pass": true,
+   "detail": "5 seasons end with 5 different sets of groups; 5 differ from the groups the season started with (e.g. marigold+tansy)",
+   "ms": 1
+  },
+  {
+   "id": "LIE-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "263 lies stored by women over the seasons, each with the claim and her real belief; the newcomer's made-up claim was stored as a lie (nothing she saw or heard backs it); 0 missing ",
+   "ms": 8
+  },
+  {
+   "id": "LIE-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "lies per woman over 5 seasons: honest types (5) 9.0, scheming types (4) 52.0",
+   "ms": 0
+  },
+  {
+   "id": "LIE-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "against what Wren saw: belief 0.15, suspicion of Odette 0.00 -> 0.25; a lie with nothing against it is sensed on the spot with p=0.053 on a calm morning, 0.131 just before the vote",
+   "ms": 59
+  },
+  {
+   "id": "LIE-4",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 350: Wren caught Odette's lie (d2); heavy memory 4; her trust in Odette 0.30 -> -0.30; she passed it on: hesper doubted it, trust +0.00; pippa believed it, trust -0.34; brenna believed it, trust -0.13",
+   "ms": 9
+  },
+  {
+   "id": "LIE-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "a planted lie about Brenna, two days later: seed 360 1/7, seed 361 6/6, seed 362 6/6, seed 363 1/7; reached a majority in 2 of 4",
+   "ms": 11547
+  },
+  {
+   "id": "LIE-6",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "the accusation: Pippa's trust in Marigold 0.30 -> 0.20; after Brenna backs her up, Celeste's suspicion of Marigold 0.60 -> 0.21 and trust -0.50 -> -0.11",
+   "ms": 5
+  },
+  {
+   "id": "LIE-7",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 380: Wren's suspicion of the newcomer 0.12; her reply was written to call it out, quoting \"I'm voting out Sylvie tonight.\" from earlier today",
+   "ms": 6
+  },
+  {
+   "id": "CHR-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "50 women checked at season end; 0 with a changed core (traits, voice, secrets, personality) not explained by a logged arc ",
+   "ms": 104
+  },
+  {
+   "id": "CHR-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "10 women's opening choices compared; mean difference between two women's profiles 26% (e.g. celeste: agenda 24%, dish 18%; odette: agenda 36%, spread 14%; marigold: agenda 40%, dish 20%)",
+   "ms": 9
+  },
+  {
+   "id": "CHR-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "asked the next day, Celeste's answer was written with her own words from yesterday (\"I'm voting out Pippa tonight, she has to go.\") and her plan in front of her",
+   "ms": 9
+  },
+  {
+   "id": "CHR-4",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "one broken promise left Marigold unchanged; the second hardened her: loyalty 0.95 -> 0.8, scheming 0.2 -> 0.3 (logged, caused by e76)",
+   "ms": 6
+  },
+  {
+   "id": "CHR-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "60 gifts of each woman's loved and hated things; 0 where her reaction didn't match her taste ",
+   "ms": 137
+  },
+  {
+   "id": "PLY-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "the newcomer's record: location yes, reputation yes, knowledge yes, commitments yes, lies yes, memory yes; 0 commitments (0 closed without a cause); 248 beliefs, each with a chain; 0 invariant breaches involving her",
+   "ms": 1
+  },
+  {
+   "id": "PLY-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "350 beliefs women hold about the newcomer; 0 with a link that isn't something she perceived or worked out ",
+   "ms": 9
+  },
+  {
+   "id": "PLY-3",
+   "kind": "audit",
+   "pass": true,
+   "detail": "682 entries behind the Tab tracker (stories heard, stories told, looks seen); 0 not traced to something the newcomer perceived or did ",
+   "ms": 6
+  },
+  {
+   "id": "PLY-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "773 decisions women made about the newcomer; 0 not made on the woman's own view (memories, beliefs, promises) ",
+   "ms": 25
+  },
+  {
+   "id": "PLY-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "the newcomer's pledge to Wren: broken (voted for Juniper Reed instead); Wren learned it at the reveal (\"Rosie told Wren Tallow she'd vote out Sylvie Moor, then voted for Juniper Reed.\") and her trust went 0.12 -> -0.88",
+   "ms": 7
+  },
+  {
+   "id": "PLY-6",
+   "kind": "audit",
+   "pass": true,
+   "detail": "33 stories about the newcomer went round; 9 reached her only after women had been passing them on, 8 never reached her at all",
+   "ms": 9
+  },
+  {
+   "id": "SYS-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "157 ballots by women; 0 without her own decision and its top reasons ",
+   "ms": 13
+  },
+  {
+   "id": "SYS-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "309 vote pledges due on a vote night; 0 not settled at the reveal, or broken without the promisee learning it ",
+   "ms": 6
+  },
+  {
+   "id": "SYS-3",
+   "kind": "audit",
+   "pass": true,
+   "detail": "50 show turns by women (38 moves); 384 attendee judgments; 0 turns some attendee never judged ",
+   "ms": 8
+  },
+  {
+   "id": "SYS-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "1 cat fights, each with a cause; 7 witnesses, 0 who don't remember it ",
+   "ms": 2
+  },
+  {
+   "id": "SYS-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "a cupcake Hesper loves, 10 towns: right before the vote she owes Celeste in 10/10 and suspects vote-buying in 6/10; in the morning 10/10 and 3/10",
+   "ms": 45
+  },
+  {
+   "id": "SYS-6",
+   "kind": "audit",
+   "pass": true,
+   "detail": "10 women hold their own judgment of the newcomer's look (10 still remember the moment); it's in 10 later decision states",
+   "ms": 18
+  },
+  {
+   "id": "SYS-7",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 430 (try 1): Wren saw the newcomer at Celeste's mailbox and now believes \"Rosie was snooping through Celeste's mail.\" (0.90); the newcomer found \"Celeste reads the private letters her clients leave in their coat pockets at the salon.\"",
+   "ms": 4
+  },
+  {
+   "id": "SYS-8",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "an anonymous note running Marigold down: Wren guessed Sylvie wrote it in 1/12 towns when she knew Sylvie has it in for Marigold, 0/12 when she didn't",
+   "ms": 46
+  },
+  {
+   "id": "SYS-9",
+   "kind": "audit",
+   "pass": true,
+   "detail": "16 women voted out; 0 acted again afterwards; the others still remember 16 of them",
+   "ms": 3
+  },
+  {
+   "id": "TIM-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "share of vividness kept: light memories 43% under a day old, 0% after two days; heavy ones 92% and 53%",
+   "ms": 1
+  },
+  {
+   "id": "TIM-2",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "two days later: 36% of the slight's effect on Wren is left; 78% of the betrayal's effect on Hesper",
+   "ms": 6
+  },
+  {
+   "id": "TIM-3",
+   "kind": "audit",
+   "pass": true,
+   "detail": "same check as SPR-5: correlation of juiciness with retellings 0.09 over 1213 stories; retold on their first day 745, two or more days old 246",
+   "ms": 5
+  },
+  {
+   "id": "TIM-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "14261 belief changes; 0 raised by time or a rule rather than new evidence ",
+   "ms": 9
+  },
+  {
+   "id": "TIM-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "paused for an hour of real time: state unchanged and no decision made; fading and drift read only the in-game clock (no wall-clock use)",
+   "ms": 70
+  },
+  {
+   "id": "VIS-1",
+   "kind": "inspect",
+   "pass": true,
+   "detail": "client code scanned for invented reactions, opinions or rumors (host patter aside): none; the Tab tracker reads the newcomer's own heard/told/knows, the vote record, seen looks and her own memories",
+   "ms": 2
+  },
+  {
+   "id": "VIS-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "29 heavy changes in how a woman sees the newcomer; 0 with no visible reaction over her head ",
+   "ms": 20
+  },
+  {
+   "id": "VIS-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "MEM-4: exact words in her memory: true; in her view when she next talks with Wren: true | LIE-7: seed 380: Wren's suspicion of the newcomer 0.12; her reply was written to call it out, quoting \"I'm voting out Sylvie tonight.\" from earlier today",
+   "ms": 14
+  },
+  {
+   "id": "VIS-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "157 ballot reasons shown at the vote; 0 that differ from the logged decision's top reasons",
+   "ms": 13
+  },
+  {
+   "id": "VIS-5",
+   "kind": "inspect",
+   "pass": true,
+   "detail": "123 reveal lines (secret, lie, promise, ballot, behind); 0 not traced to a logged event or decision; e.g. \"Celeste Belrose's secret: Celeste reads the private letters her clients leave in their coat pockets at the salon.\"",
+   "ms": 105
+  },
+  {
+   "id": "INT-1",
+   "kind": "audit",
+   "pass": true,
+   "detail": "the Jev and Claude layers (voice.js, jev.js) read the state and return proposals; state writes found there: none",
+   "ms": 0
+  },
+  {
+   "id": "INT-2",
+   "kind": "audit",
+   "pass": true,
+   "detail": "rule scan over 5 seasons (175 ballots): no violations",
+   "ms": 1
+  },
+  {
+   "id": "INT-3",
+   "kind": "audit",
+   "pass": true,
+   "detail": "106712 state changes; 0 without a cause pointer ",
+   "ms": 18
+  },
+  {
+   "id": "INT-4",
+   "kind": "inspect",
+   "pass": true,
+   "detail": "36 sampled beliefs, feelings, plans, promises and goals; 0 whose chain of causes breaks; e.g. Tansy claim: \"Tansy is voting out Celeste.\" <- line by Tansy: \"Tansy is voting out Celeste. I'm voting out Wren and you should too.\" <- Tansy decided: felt about the same about Hesper <- line by Hesper: \"No, I won't do that. So who are you voting for tonight?\"",
+   "ms": 35
+  },
+  {
+   "id": "INT-5",
+   "kind": "audit",
+   "pass": true,
+   "detail": "invariants checked after every tick (1998 checks over 5 seasons); breaches: none",
+   "ms": 6
+  },
+  {
+   "id": "RUN-1",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "while paused: no Jev or Claude call went out and nothing changed; after unpausing the held call went through; the page pauses itself when hidden or closed: true",
+   "ms": 6
+  },
+  {
+   "id": "RUN-2",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "saved mid-plan and reloaded: memories, beliefs, promises, agendas and talks identical; after the reload Brenna's plan to talk to Juniper was still on her list and she acted on it 0 time(s) (promise abandoned, by her own decision after the reload: changed her mind)",
+   "ms": 337
+  },
+  {
+   "id": "RUN-3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "with the dialogue model down the talk was ended (\"the words wouldn't come (dialogue unavailable)\", cause d3); new lines 0, shown on screen 0, shown without a committed line 0",
+   "ms": 5
+  },
+  {
+   "id": "RUN-4",
+   "kind": "audit",
+   "pass": true,
+   "detail": "151/151 other tests pass on the offline stand-in (same interfaces, same state, same moves and decisions)",
+   "ms": 0
+  },
+  {
+   "id": "RUN-5",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "two replays of day 1 from the same seed and recorded model outputs: 516 vs 516 events, 1789 vs 1789 decisions; first difference: events -1, decisions -1",
+   "ms": 2881
+  },
+  {
+   "id": "RUN-6",
+   "kind": "audit",
+   "pass": true,
+   "detail": "the newcomer's talks: 40 replies timed, 95th percentile 8 ms to start (target 2500 ms headless; the live target is set from the first real-model run); the world loop never waits on off-screen talks (each tick starts work and returns)",
+   "ms": 0
+  },
+  {
+   "id": "RUN-7",
+   "kind": "audit",
+   "pass": true,
+   "detail": "spend ceiling 160 calls per in-game hour; peak 40; bound in 0 of 12 hours (last season); off-screen talks skipped for budget: 0",
+   "ms": 0
+  },
+  {
+   "id": "E1",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 601: abandoned: never meant it; seed 602: raised Odette when Juniper came to talk to her; seed 603: walked over and raised Odette; seed 604: abandoned: never meant it; seed 605: abandoned: never meant it; seed 606: walked over and raised Odette",
+   "ms": 5781
+  },
+  {
+   "id": "E2",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "Celeste's pledge: broken (\"voted for Juniper Reed instead\", cause e66); the newcomer saw it at the reveal: true, and it's in her season reveal: true; Tansy's trust in Celeste 0.00 -> -0.10 at the reveal; 4 women hold it as a story about Celeste (the reveal was public); next day it was retold 2 times and reached 0 women who weren't at the firepit",
+   "ms": 495
+  },
+  {
+   "id": "E3",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 621: belief cites the newcomer true, clash resolved true, marks her a liar false (suspicion 0.00 -> 0.00 three hours later); seed 622: belief cites the newcomer true, clash resolved true, marks her a liar true (suspicion 0.12 -> 0.12 three hours later); seed 623: belief cites the newcomer true, clash resolved true, marks her a liar true (suspicion 0.12 -> 0.12 three hours later); seed 624: belief cites the newcomer true, clash resolved true, marks her a liar false (suspicion 0.00 -> 0.00 three hours later); seed 625: belief cites the newcomer true, clash resolved true, marks her a liar false (suspicion 0.00 -> 0.00 three hours later); seed 626: belief cites the newcomer true, clash resolved true, marks her a liar true (suspicion 0.12 -> 0.12 three hours later)",
+   "ms": 662
+  },
+  {
+   "id": "E4",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 631: promise open, told it 0 times, covers 1 stories; seed 632: she turned the newcomer down (d2), so no promise; seed 633: promise open, told it 0 times, covers 1 stories; seed 634: promise broken (told Brenna anyway), told it 4 times, covers 1 stories; seed 635: she turned the newcomer down (d2), so no promise; seed 636: promise broken (told Brenna anyway), told it 2 times, covers 1 stories | when Pippa tells Hesper anyway: promise broken (\"told Hesper anyway\", cause e65); the newcomer's reveal shows \"Pippa Fennel told you she would keep quiet about Marigold's debt and didn't: told Hesper anyway. She never meant it.\"",
+   "ms": 2140
+  },
+  {
+   "id": "E5",
+   "kind": "audit",
+   "pass": true,
+   "detail": "14 things said about the newcomer behind her back (each a real line); 9 changed what a listener thinks of her; 7 showed up later in a vote, words to her face, or a retelling. e.g. celeste to tansy: \"Between us, Rosie is a snake. I don't trust her one bit.\" -> juniper later said to her face: \"So who are you voting for tonight?\"",
+   "ms": 34
+  },
+  {
+   "id": "E6",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "12 promisees over 6 towns: all hold both of the newcomer's vote promises: true; 6 concluded she's telling different people different things (a Jev judgment each), and trust dropped for every one of them; trust changes wren -0.49, hesper -0.49, wren -0.50, hesper +0.00, wren +0.00, hesper -0.07, wren +0.00, hesper -0.49, wren -0.49, hesper +0.00, wren +0.00, hesper -0.49",
+   "ms": 51
+  },
+  {
+   "id": "E7",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 651: Wren caught only \"… both vote out Juniper … tell nobody.\"; she holds 2 belief(s) from it at 0.42/0.29 vs Sylvie's 0.70; she judged what she half-heard (a Jev decision) and passed a version on 0 time(s) | PRC-3: partial memory \"Brenna sold the smithy's best anvil … for …\"; belief flagged partial: true; conf 0.03 vs full hearer 0.22 | SPR-3: 109 retellings changed the story across 5 seeded seasons; both versions stored for 109",
+   "ms": 179
+  },
+  {
+   "id": "E8",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "6 towns: Hesper owes the newcomer in 6, reads it as vote-buying in 3, both in 3; her ballot's chance of naming the newcomer: 0.031 with the gift vs 0.076 without (debt pulls it down, suspicion pushes it up); e.g. debt 0.90, motive vote, why: gave me a pink cupcake, which I loved / trying to buy my vote | SYS-5: a cupcake Hesper loves, 10 towns: right before the vote she owes Celeste in 10/10 and suspects vote-buying in 6/10; in the morning 10/10 and 3/10",
+   "ms": 93
+  },
+  {
+   "id": "E9",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "seed 681: held by 3 women after two days; after a witness's account 3/3 revised and 3 grew suspicious of whoever told them: sylvie 0.48->0.15 (suspicion of juniper 0.01->0.13); juniper 0.48->0.15 (suspicion of tansy 0.00->0.12); tansy 0.81->0.15 (suspicion of odette 0.00->0.12) | seed 682: held by 4 women after two days; after a witness's account 2/3 revised and 2 grew suspicious of whoever told them: marigold 0.48->0.15 (suspicion of odette 0.00->0.11); pippa 0.68->0.15 (suspicion of tansy 0.41->0.45); juniper 0.70->0.70 (suspicion of odette 0.10->0.10) | seed 683: held by 1 women after two days; after a witness's account 1/1 revised and 1 grew suspicious of whoever told them: tansy 0.80->0.15 (suspicion of odette 0.00->0.12)",
+   "ms": 11250
+  },
+  {
+   "id": "E10",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "after the reload both were still open: true; the plan to talk to Juniper ended kept (\"she did it\") during the day; the vote pledge stayed open until the vote and was settled broken at the reveal (Brenna voted for Celeste)",
+   "ms": 711
+  },
+  {
+   "id": "E11",
+   "kind": "scenario",
+   "pass": true,
+   "detail": "dialogue down from 11:00 to 14:00: 39 talks cancelled, all with a cause (0 without); 83 lines shown on screen all day, 0 without a committed state update; with Jev unreachable every decision falls back to the stand-in with the same shapes (the whole suite runs that way) | RUN-3: with the dialogue model down the talk was ended (\"the words wouldn't come (dialogue unavailable)\", cause d3); new lines 0, shown on screen 0, shown without a committed line 0",
+   "ms": 1052
+  },
+  {
+   "id": "E12",
+   "kind": "audit",
+   "pass": true,
+   "detail": "full seeded seasons run headless (one of 6 days, four of 3 days): 78/78 audits pass",
+   "ms": 0
+  }
+ ]
+}

@@ -1,19 +1,23 @@
-// The words. Every line a cast member says is written by Claude, but only after Jev and
-// code have decided what the line has to do. Claude is reached in one of two ways:
-//   - on claude.ai, through the page's `sample` capability (runs on the viewer's account)
-//   - from the Node server in this repo, at /api/say
-// With neither, a phrasebook fills in so the game still plays.
+// The words. Every line anyone in town says is written by Claude from that woman's own view
+// (views.js) and the intent Jev already chose for her, and comes back with the moves it
+// makes (claims, promises, requests…), each pointing at the words that made it. The words
+// are never shown or kept until code has validated those moves and committed them.
+//
+// Claude is reached through the page's `sample` capability on claude.ai, or the Node
+// server's /api/say. With neither, nobody speaks: conversations don't happen rather than
+// being faked.
 
 import { VILLAGERS, HOST } from "./cast.js";
+import * as runtime from "./runtime.js";
 
-let backend = null;   // "sample" | "server" | null
+let backend = null;   // "sample" | "server" | "test" | null
 let sampleFn = null;
 let failures = 0;
-export const stats = { calls: 0, ms: 0, fallbacks: 0 };
+export const stats = { calls: 0, ms: 0, failed: 0, retries: 0, regenerated: 0, reextracted: 0 };
 
 export async function initVoice() {
   try {
-    if (window.claude?.use) {
+    if (typeof window !== "undefined" && window.claude?.use) {
       const s = await Promise.race([window.claude.use("sample"), new Promise((r) => setTimeout(() => r(null), 10000))]);
       if (s) { sampleFn = s; backend = "sample"; return backend; }
     }
@@ -26,52 +30,50 @@ export async function initVoice() {
   return backend;
 }
 
-// tests: write the words with a function instead of Claude
+// tests: write the words with a function (prompt, meta) instead of Claude
 let testFn = null;
 export function __setWriter(fn) { testFn = fn; backend = fn ? "test" : null; }
+export const available = () => !!backend;
 
 export function voiceStatus() {
   if (backend === "sample") return { live: failures < 3, label: "Claude (your account)" };
   if (backend === "server") return { live: failures < 3, label: "Claude (server)" };
-  return { live: false, label: "Phrasebook" };
+  if (backend === "test") return { live: true, label: "Test writer" };
+  return { live: false, label: "No dialogue (Claude unavailable)" };
 }
+// the game's pause holds every call (see runtime.js); kept here for the page
+export const setPaused = (on) => runtime.setPaused(on);
 
 const first = (v) => v.first || v.name.split(" ")[0];
 const cast = () => VILLAGERS.map((v) => `${v.name} (${v.job})`).join(", ");
 
-// what the newcomer is wearing right now, so every line can notice it (set by looks.js)
 let wearing = "";
 export function setLook(text) { wearing = text || ""; }
 
 const STYLE = (playerName) => `You write dialogue for "Gossiptown", a cozy-looking village reality show with a vicious heart. Ten women live in a tiny storybook town and every night they vote one of their own out. Think reality TV: catty, two-faced, shady, dramatic, funny. Sweet to faces, savage behind backs. Everyone is a woman. No romance, no flirting. No violence beyond a shove. No magic spells.
-The cast: ${cast()}. The host is ${HOST.name}. The newcomer (the player) is called ${playerName}.${wearing ? ` Today ${playerName} is wearing ${wearing}; people may remark on it when it fits.` : ""} Never invent other named townsfolk.
-Write plain spoken words only: no quotation marks, no stage directions, no asterisks, no emoji, no narration.`;
+The cast: ${cast()}. The host is ${HOST.name}. The newcomer (the player) is called ${playerName}.${wearing ? ` Today ${playerName} is wearing ${wearing}.` : ""} Never invent other named townsfolk.`;
 
-// At most three Claude calls run at once. Lines the player is waiting on (a reply, a
-// walk-up, the vote) jump ahead of background chatter, which would otherwise pile up
-// and make every line late.
+// ---------- the queue ----------
+// At most three calls at once; what the player is waiting on goes first.
 const AT_ONCE = 3;
 let running = 0;
-const queue = []; // { pri, go }
-function slot(pri) {
-  return new Promise((go) => { queue.push({ pri, go }); queue.sort((a, b) => b.pri - a.pri); pump(); });
-}
-function pump() { while (!held && running < AT_ONCE && queue.length) { running++; queue.shift().go(); } }
-const PRI = { player: 2, vote: 1, talk: 0, background: 0 };
-// While the game is paused nothing new is sent; queued lines wait.
-let held = false;
-export function setPaused(on) { held = !!on; if (!held) pump(); }
+const queue = [];
+function slot(pri) { return new Promise((go) => { queue.push({ pri, go, n: ++qn }); queue.sort((a, b) => b.pri - a.pri || a.n - b.n); pump(); }); }
+let qn = 0;
+function pump() { while (running < AT_ONCE && queue.length) { running++; queue.shift().go(); } }
+const PRI = { player: 3, vote: 2, show: 2, talk: 1, background: 0 };
+export const queued = () => queue.length;
 
-async function raw(prompt, { maxMs = 30000, onText, pri = "background" } = {}) {
-  if (!backend) { stats.fallbacks++; return null; }
-  // a retelling that would wait behind a long queue is not worth writing; conversations
-  // ("talk") always are, because what was said becomes part of the world
-  if (pri === "background" && queue.length >= 6) { stats.fallbacks++; return null; }
-  await slot(PRI[pri] ?? 0);
-  try { return await call(prompt, { maxMs, onText }); } finally { running--; pump(); }
+async function raw(prompt, { maxMs = 30000, pri = "talk", meta = {}, s = null } = {}) {
+  if (!backend) return null;
+  if (s) runtime.spend(s);
+  return runtime.call("claude", async () => {
+    await slot(PRI[pri] ?? 0);
+    try { return await send(prompt, { maxMs, meta }); } finally { running--; pump(); }
+  });
 }
 
-async function call(prompt, { maxMs, onText }) {
+async function send(prompt, { maxMs, meta }) {
   stats.calls++;
   const t0 = performance.now();
   try {
@@ -79,12 +81,9 @@ async function call(prompt, { maxMs, onText }) {
     if (backend === "sample") {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), maxMs);
-      try {
-        const r = await sampleFn(prompt, { modelTier: "quick", cache: false, signal: ctrl.signal, onText: onText ? ({ text }) => onText(text) : undefined });
-        text = r.text;
-      } finally { clearTimeout(timer); }
+      try { text = (await sampleFn(prompt, { modelTier: "quick", cache: false, signal: ctrl.signal })).text; } finally { clearTimeout(timer); }
     } else if (backend === "test") {
-      text = await testFn(prompt);
+      text = await testFn(prompt, meta);
     } else if (backend === "server") {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), maxMs);
@@ -93,314 +92,107 @@ async function call(prompt, { maxMs, onText }) {
         if (r.ok) text = (await r.json()).text;
       } finally { clearTimeout(timer); }
     }
-    stats.ms += performance.now() - t0;
-    text = clean(text);
-    if (text) { failures = 0; return text; }
+    const ms = performance.now() - t0;
+    stats.ms += ms;
+    runtime.timed("claude", ms);
+    if (text && String(text).trim()) { failures = 0; return String(text); }
   } catch (e) {
     if (e?.code === "not_granted") backend = null;
   }
   if (backend) failures++;
-  stats.fallbacks++;
+  stats.failed++;
   return null;
 }
 
-const clean = (t) => (t || "").trim().replace(/^["“]|["”]$/g, "").replace(/\*[^*]+\*/g, "").trim();
+// ---------- reading the answer ----------
 
-// ---------- what got said, in a form the game can act on ----------
-// Every written conversation ends with a list of the promises and claims in it, so the
-// words never float free of the game: code turns each one into a plan, a vote, a promise
-// in the book or a rumor someone now knows.
-const FACTS = `After the words, write a line with only --- on it. Under it, one line for each thing a speaker said she WILL do (a promise, a plan, who she is voting for) and each claim a speaker made about another woman, in exactly this form:
-WILL | speaker's first name | first name of who she said it to | what she will do, in a few words
-CLAIM | speaker's first name | first name of who it is about | the claim as one plain sentence
-Write NONE under the line if there is nothing like that. Only list what the words actually say.`;
-
-export function splitFacts(text) {
-  if (!text) return { body: text, facts: [] };
-  const i = text.search(/\n\s*---/);
-  const body = (i >= 0 ? text.slice(0, i) : text.replace(/\n\s*(WILL|CLAIM|NONE)\b[\s\S]*$/, "")).trim();
-  const tail = i >= 0 ? text.slice(i) : (text.match(/\n\s*((WILL|CLAIM)\b[\s\S]*)$/) || [, ""])[1];
-  const facts = tail.split("\n").map((l) => l.split("|").map((x) => x.trim())).filter((p) => p.length >= 4 && /^(WILL|CLAIM)$/i.test(p[0]))
-    .map(([type, by, to, what]) => ({ type: type.toUpperCase(), by, to, what: clean(what) }));
-  return { body, facts };
+export function parseJSON(text) {
+  if (!text) return null;
+  const t = String(text).replace(/```(json)?/g, "");
+  const i = t.indexOf("{"), j = t.lastIndexOf("}");
+  if (i < 0 || j < i) return null;
+  try { return JSON.parse(t.slice(i, j + 1)); } catch { return null; }
 }
-// streaming: show only the spoken part
-const spoken = (t) => (t || "").split(/\n\s*(---|WILL\b|CLAIM\b|NONE\b)/)[0];
-const pastText = (earlier, promises) => `${earlier?.length ? `What you two have said to each other before:\n${earlier.join("\n")}\n` : ""}${promises?.length ? `Promises between you (keep them in mind; never pretend one wasn't made):\n${promises.join("\n")}\n` : ""}`;
+export const cleanLine = (t) => String(t || "").trim().replace(/^["“]|["”]$/g, "").replace(/\*[^*]+\*/g, "").replace(/\s+/g, " ").trim();
 
-const describe = (v) => `${v.name}, the ${v.job} (${v.archetype}). Personality: ${v.traits.join(", ")}. Speaks: ${v.voice}.`;
-const ONLY = "Do not have anyone promise, announce or hint at any plan, vote or next step other than the ones listed here.";
+const MOVE_HELP = `Moves (list every one the words make; each "span" must be copied exactly from the line):
+- claim: states something about someone (who did what, who is voting for whom, who said what). Fields: about, content (one plain sentence that names her), stance ("affirm" or "deny"), and for a claim about someone's vote, vote_target. Cite the tag of what you know in "belief", or set "lie": true only if your instructions say to lie.
+- promise: says she WILL do something for/with the listener. Fields: to, content, kind (vote | pact | keep_quiet | talk | ask | warn | confront | spread | defend | gift | other), target (who it's about, if anyone), topic.
+- plan: says what she means to do (not as a promise to the listener). Same fields as promise.
+- request: asks the listener to do something. Fields: to, content, kind (as above), target.
+- agreement / refusal: says yes / no to a request. Field: content.
+- question: asks something. Field: content, about.
+- threat, accusation, insult, compliment, apology: Fields: to/about, content.
+- secret: reveals something told in confidence (also list it as a claim).
+- tone: exactly one, content is one word: warm, friendly, neutral, guarded, cool, hostile, sweet-but-fake, nervous.`;
 
-// ---------- the cast member answers the player ----------
+// ---------- a woman says her line ----------
+// ctx: { v, view (her payload), to: [names], present: [names], history: ["Name: words"],
+//        intent: text, allowed: [rid...], lie: { about, content } | null, setting, playerName,
+//        strict: bool (after an ungrounded claim) }
+export async function turn(s, ctx, { pri = "talk" } = {}) {
+  const { v, view, to, history, intent, lie, setting, playerName, strict, words = "1 to 2 short sentences, under 30 words" } = ctx;
+  const prompt = `${STYLE(playerName)}
 
-export async function reply(ctx, onText) {
-  const { v, playerName, history, line, stance, react, plan, otherPlan, opinion, mood, earlier, promises } = ctx;
-  const text = await raw(`${STYLE(playerName)}
+You are ${v.name}, the ${v.job} (${v.archetype}). Personality: ${v.traits.join(", ")}. You speak: ${v.voice}.
+Everything you know, feel and remember is below. Nothing else is true to you.
+${JSON.stringify(view, null, 1)}
 
-You are ${describe(v)}
-Your mood: ${mood}. What you think of ${playerName}: ${opinion}.
-${pastText(earlier, promises)}Conversation so far:
-${history.slice(-8).join("\n") || "(just started)"}
-${playerName} says: ${line}
-How you respond: ${stance}. ${react.join(" ")}
-${plan ? `You have decided to ${plan}. You may say so.` : `You have not decided to do anything about this.${otherPlan ? ` (You already mean to ${otherPlan}; mention it only if it fits.)` : ""}`}
-${ONLY}
-Reply as ${first(v)} in 1 to 2 short sentences, in your own voice. Keep it under 30 words.
-${FACTS}`, { onText: onText ? (x) => onText(spoken(x)) : undefined, pri: "player" });
-  if (!text) return { text: phrase.reply(ctx), facts: [] };
-  const { body, facts } = splitFacts(text);
-  return { text: body || phrase.reply(ctx), facts };
-}
-
-// ---------- a cast member walks up to the player ----------
-
-export async function opener(ctx) {
-  const { v, playerName, purpose, detail, opinion, earlier, promises } = ctx;
-  const text = await raw(`${STYLE(playerName)}
-
-You are ${describe(v)}
-What you think of ${playerName}: ${opinion}.
-${pastText(earlier, promises)}
-You walk straight up to ${playerName} to ${purpose}${detail ? `: ${detail}` : ""}.
-${ONLY}
-Say your opening line as ${first(v)}, 1 to 2 short sentences, under 25 words.
-${FACTS}`, { maxMs: 12000, pri: "player" });
-  const { body, facts } = splitFacts(text);
-  return body ? { text: body, facts } : { text: phrase.opener(ctx), facts: [] };
+${setting}
+${history.length ? `What has been said so far:\n${history.join("\n")}\n` : ""}What you do now: ${intent}.
+${lie ? `You have decided to lie: ${lie.content}. That lie is the only thing you may make up.` : "Do not make up any fact. Anything you claim about anyone must be one of the things you believe above (cite its [r..] tag)."}
+${strict ? `Your last attempt claimed something you don't know. Claim only these, by tag: ${ctx.allowed.join(", ") || "nothing (make no claims about anyone)"}.` : ""}
+Say it to ${to.join(" and ")} as ${first(v)}, ${words}, in your own voice. Plain spoken words: no quotation marks, no stage directions, no emoji.
+${MOVE_HELP}
+Answer with JSON only: {"line": "your words", "moves": [{"type": "...", "span": "...", ...}]}`;
+  const text = await raw(prompt, { pri, s, meta: { kind: "turn", speaker: v.id, ctx } });
+  if (!text) return null;
+  const j = parseJSON(text);
+  if (!j?.line) return { line: cleanLine(text.split("\n")[0]), moves: null, raw: text };
+  return { line: cleanLine(j.line), moves: Array.isArray(j.moves) ? j.moves : null, raw: text };
 }
 
-// ---------- two cast members talking, overheard by the player ----------
-
-export async function exchange(ctx) {
-  const { a, b, playerName, topic, rumorText, aboutName, outcome, next, earlier, promises } = ctx;
-  const text = await raw(`${STYLE(playerName)}
-
-Write a short exchange of 3 to 4 lines between two women, each line starting with the speaker's first name and a colon.
-${describe(a)}
-${describe(b)}
-${pastText(earlier, promises).replace(/you two/g, "these two").replace(/between you/, "between them")}
-What they talk about: ${topic}${rumorText ? `. The story${aboutName ? ` (about ${aboutName})` : ""}: "${rumorText}"` : ""}.
-How it ends: ${outcome}.
-${next.length ? `What they decide to do next: ${next.join("; ")}.` : "Nobody decides to do anything next."}
-${ONLY}
-Each line under 18 words. No blank lines.
-${FACTS}`, { pri: "talk", maxMs: 45000 });
-  const { body, facts } = splitFacts(text);
-  const lines = parseLines(body, [a, b]);
-  const out = lines.length >= 2 ? lines : phrase.exchange(ctx);
-  out.facts = lines.length >= 2 ? facts : [];
-  return out;
+// ---------- reading moves out of words (the player's, or a line whose moves didn't check out) ----------
+export async function extract(s, { line, speaker, listeners, history = [], playerName, carrying = null, setting = "" }, { pri = "player" } = {}) {
+  const prompt = `Read one line of dialogue from the village reality show "Gossiptown" and list every move it makes.
+The cast: ${cast()}. The newcomer (the player) is called ${playerName}.
+${setting}
+${history.length ? `Conversation so far:\n${history.slice(-8).join("\n")}\n` : ""}${speaker} says to ${listeners.join(" and ")}: ${line}
+${carrying ? `${speaker} is holding ${carrying}; if she hands it over, add a move {"type": "gift", "span": "...", "content": "${carrying}"}.\n` : ""}If she physically attacks the listener, add {"type": "attack", "span": "..."}.
+${MOVE_HELP.replace(/ Cite the tag[^.]*\. *Set[^.]*\./, "").replace(/ Cite the tag of what you know in "belief", or set "lie": true only if your instructions say to lie\./, "")}
+Use first names for about/to/target. Answer with JSON only: {"moves": [{"type": "...", "span": "...", ...}]}`;
+  const text = await raw(prompt, { pri, s, meta: { kind: "extract", speaker, line, listeners } });
+  const j = parseJSON(text);
+  return Array.isArray(j?.moves) ? j.moves : null;
 }
 
-function parseLines(text, people) {
-  if (!text) return [];
-  return text.split("\n").map((l) => l.match(/^\s*([^:]{1,30}):\s*(.+)$/)).filter(Boolean).map((m) => {
-    const who = people.find((p) => m[1].toLowerCase().includes(first(p).toLowerCase()));
-    return who ? { id: who.id, text: clean(m[2]) } : null;
-  }).filter(Boolean);
-}
-
-// ---------- turning words into stories that travel ----------
-
-export async function asStory({ line, aboutName, history, playerName }) {
-  const text = await raw(`Recent conversation:
-${history.slice(-6).join("\n") || "(none)"}
-${playerName} just said: ${line}
-Write what ${playerName} is claiming about ${aboutName} as one plain sentence that names ${aboutName} and makes sense on its own. Keep the meaning, add nothing. Output only the sentence.`, { maxMs: 20000, pri: "player" });
-  return text;
-}
-
-export async function retell({ teller, rumorText, playerName }) {
-  const text = await raw(`${STYLE(playerName)}
-
-${describe(teller)}
-Retell this piece of gossip in one juicy sentence the way ${first(teller)} would pass it on, a little exaggerated but the same story: "${rumorText}"
-Output only the sentence.`, { maxMs: 10000 });
-  return text;
-}
-
-// ---------- Primrose's daily shows ----------
-
-// Every speaker's moment at a show, written in one call while Primrose opens it.
-// items: [{ v, what }] where `what` says what she does with the floor. Returns { id: line }.
-export async function showLines({ items, title, blurb, place, playerName }) {
-  if (!items.length) return {};
-  const text = await raw(`${STYLE(playerName)}
-
-The host Primrose is running a show for the whole town called "${title}" at ${place}: ${blurb}
-Each of these women gets the floor in front of everyone and does exactly what is listed.
-${items.map((it) => `- ${describe(it.v)} What she does: ${it.what}.`).join("\n")}
-Write what each one says, each starting with her first name and a colon, in her own voice, playing to the crowd. One or two sentences, under 32 words each. ${ONLY} For the list below, "who she said it to" is "everyone".
-${FACTS}`, { maxMs: 25000, pri: "vote" });
-  const { body, facts } = splitFacts(text);
-  const out = {};
-  for (const l of parseLines(body, items.map((it) => it.v))) out[l.id] = l.text;
-  Object.defineProperty(out, "facts", { value: facts, enumerable: false });
-  return out;
-}
-
-export async function showLine({ v, title, blurb, place, what, context, playerName }) {
-  const text = await raw(`${STYLE(playerName)}
-
-You are ${describe(v)}
-The host Primrose is running a show for the whole town called "${title}" at ${place}: ${blurb}
-${context ? `${context}\n` : ""}In front of everyone, you ${what}.
-${ONLY}
-Say it as ${first(v)}, one or two sentences, under 30 words, playing to the crowd.`, { maxMs: 15000, pri: "vote" });
-  return text || phrase.show({ v, what });
-}
+// ---------- Primrose (the host's lines are the format's own words, not a character's choices) ----------
 
 // ---------- the vote ----------
-
-export async function partingShot({ v, playerName, votedBy, betrayedBy }) {
-  const text = await raw(`${STYLE(playerName)}
-
-You are ${describe(v)}
-You have just been voted out of Gossiptown and must leave town tonight. Voted against you: ${votedBy.join(", ") || "nobody you expected"}.${betrayedBy.length ? ` You feel betrayed by ${betrayedBy.join(", ")}.` : ""}
-Say your exit line as ${first(v)}: one or two dramatic sentences, under 28 words.`, { maxMs: 20000, pri: "vote" });
-  return text || phrase.parting({ v, betrayedBy });
-}
-
-// Every cast member's line as her ballot is read out, written in one call while the
-// player is still choosing. Returns { voterId: line } for the lines that came back.
-export async function ballotLines({ items, playerName, finale }) {
+// One call writes every ballot line while the player is still choosing; each voter's line is
+// written from her own reasons (her decision) and comes back with its moves.
+export async function ballotLines(s, { items, playerName, finale }) {
   if (!items.length) return {};
   const text = await raw(`${STYLE(playerName)}
 
-It is ${finale ? "the finale. Women already voted out are the jury and each names the woman who should win the season" : "vote night at the firepit. Each woman names the woman she wants sent home"}. The host reads each ballot aloud and the voter says one short line as hers is read.
-${items.map((it) => `- ${describe(it.v)} Votes for ${it.target}. How she feels about her: ${it.feeling}.${it.why ? ` Why: ${it.why}.` : ""}`).join("\n")}
-Write one line for each voter, each starting with her first name and a colon, in her own voice. Under 14 words each. Mention who she votes for by first name. No other text.`, { maxMs: 25000, pri: "vote" });
+It is ${finale ? "the finale. Women already voted out are the jury and each names the woman who should win the season" : "vote night at the firepit. Each woman names the woman she wants sent home"}. The host reads each ballot aloud and the voter says one short line as hers is read, in front of everyone.
+${items.map((it) => `- ${it.v.name} (${it.v.voice}). Votes for ${it.target}. Her reasons: ${it.why}.`).join("\n")}
+Write one line for each voter in her own voice, under 16 words, mentioning who she votes for by first name. Each line may only use her reasons above.
+${MOVE_HELP}
+Answer with JSON only: {"lines": [{"by": "first name", "line": "...", "moves": [...]}]}`, { maxMs: 30000, pri: "vote", s, meta: { kind: "ballots", items: items.map((it) => ({ id: it.v.id, target: it.target, why: it.why })) } });
+  const j = parseJSON(text);
   const out = {};
-  for (const l of parseLines(text, items.map((it) => it.v))) out[l.id] = l.text;
+  for (const l of j?.lines || []) {
+    const it = items.find((x) => first(x.v).toLowerCase() === String(l.by || "").toLowerCase());
+    if (it && l.line) out[it.v.id] = { line: cleanLine(l.line), moves: Array.isArray(l.moves) ? l.moves : [] };
+  }
   return out;
 }
 
-export async function voteReaction({ v, voter, playerName, wasAlly }) {
-  return phrase.voteReaction({ v, voter, wasAlly });
+export async function partingShot(s, { v, view, playerName, votedBy, betrayedBy }) {
+  return turn(s, {
+    v, view, to: ["everyone"], history: [], playerName,
+    setting: `You have just been voted out of Gossiptown and must leave tonight. Voted against you: ${votedBy.join(", ") || "nobody you expected"}.${betrayedBy.length ? ` You feel betrayed by ${betrayedBy.join(", ")}.` : ""}`,
+    intent: "say your exit line: one or two dramatic sentences", allowed: [], words: "one or two dramatic sentences, under 28 words",
+  }, { pri: "vote" });
 }
-
-// =====================================================================
-// The phrasebook: used when Claude can't be reached, and for quick barks.
-// =====================================================================
-
-const pick = (a) => a[Math.floor(Math.random() * a.length)];
-const VOICE_TICS = {
-  celeste: { hi: ["Darling!", "Sweetie, hi!", "Oh, it's you. Love that for you."], yes: ["Of course, darling.", "Mm, I adore that.", "Obviously."], no: ["Oh sweetie, no.", "That's adorable. No.", "Darling, please."], bye: ["Kisses!", "Ta-ta, darling."] },
-  odette: { hi: ["Well, well.", "Ah. The new one.", "Looking for a deal?"], yes: ["That could be arranged.", "Interesting. Very interesting.", "I'll remember that."], no: ["I don't think so, dear.", "That's not worth my time.", "No deal."], bye: ["Don't be a stranger. I always find them.", "We'll talk."] },
-  wren: { hi: ["Hello, love!", "Oh, love, come here, come here!", "There she is!"], yes: ["No! Really? Tell me everything!", "Oh, I KNEW it, love!", "Ooh, love, that's juicy."], no: ["Oh, love, I don't think so.", "Ooh, I'm not sure about that, love.", "Really? Hm."], bye: ["Off you go, love!", "Come back with more, love!"] },
-  sylvie: { hi: ["Oh. Hi.", "What.", "Look who it is."], yes: ["Fine. Sure.", "Huh. Didn't think you had it in you.", "Yeah, that tracks."], no: ["Wow. No.", "Sure you did.", "Riveting. No."], bye: ["Bye, I guess.", "Don't trip on the way out."] },
-  marigold: { hi: ["Oh! Hi, hello!", "Oh gosh, hi.", "Hello! Sorry, hi!"], yes: ["Oh gosh, really?", "Okay, okay, I believe you...", "That makes sense, I suppose..."], no: ["Oh, I don't know about that...", "Gosh, I hope that's not true.", "I'd really rather not..."], bye: ["Okay, bye! Sorry!", "Take care, okay?"] },
-  pippa: { hi: ["Hi hi hi!", "Oh! It's you! Honest, I was just thinking about you!", "Heyyy!"], yes: ["No way! Honest?", "Totally, totally!", "Oh wow, okay, yes!"], no: ["Wait, really? No, I don't think so, honest.", "Hmm, that doesn't sound right?", "Nooo."], bye: ["Bye! Honest, come back!", "See you!"] },
-  brenna: { hi: ["What do you want.", "Hm.", "Make it quick."], yes: ["Fine.", "Fair.", "Good."], no: ["No.", "Don't waste my time.", "Not buying it."], bye: ["Right.", "Go on, then."] },
-  juniper: { hi: ["Oh, you came. The crows said you might.", "Hello, little moth.", "Your aura is all orange today."], yes: ["Yes... the leaves agree.", "That feels true in my bones.", "Mm. I sensed that."], no: ["The moon disagrees.", "No... that one smells wrong.", "I don't think the stars believe you."], bye: ["Mind the puddles.", "Go gently."] },
-  hesper: { hi: ["Yes, dear?", "You again.", "State your business, dear."], yes: ["Noted.", "That is acceptable.", "I see."], no: ["I very much doubt it, dear.", "Nonsense.", "That is not how we do things here."], bye: ["Good day, dear.", "That will be all."] },
-  tansy: { hi: ["Oh, perfect timing.", "Hello! Got a minute? I have questions.", "There's my favorite new face."], yes: ["Fascinating. Go on.", "Noted. Very noted.", "Oh, that's going in the notebook."], no: ["Hm. That doesn't add up.", "Interesting choice of story.", "I'll need a second source for that."], bye: ["Let's do this again.", "Stay interesting."] },
-  primrose: { hi: ["Hello, hello!"], yes: ["Wonderful!"], no: ["Oh dear."], bye: ["Toodles!"] },
-};
-const tic = (v, k) => pick((VOICE_TICS[v.id] || VOICE_TICS.primrose)[k]);
-const name = (v) => first(v);
-
-export const phrase = {
-  reply({ v, stance, react, plan, playerName }) {
-    const parts = [];
-    if (react.some((r) => r.includes("lied"))) parts.push(pick(["You're lying to my face. Cute.", "Oh, please. I know that's not true.", "Nice try. I know better."]));
-    else if (react.some((r) => r.includes("You believe"))) parts.push(tic(v, "yes"));
-    else if (react.some((r) => r.includes("do not believe"))) parts.push(tic(v, "no"));
-    else if (react.some((r) => r.includes("agree"))) parts.push(pick(["Fine. You've got a deal.", "Okay. We're in this together.", "Deal. Don't make me regret it."]));
-    else if (react.some((r) => r.includes("turn down"))) parts.push(pick(["I don't team up with just anyone.", "Not a chance.", "Ask me again when you've earned it."]));
-    else parts.push({ warm: tic(v, "hi"), polite: pick(["Mm-hm.", "I see.", "Right."]), guarded: pick(["Why are you telling me this?", "Hm. Careful.", "What do you want?"]), curious: pick(["Go on...", "Ooh, and then?", "Tell me more."]), dismissive: pick(["Okay. And?", "Is that all?", "Riveting."]), hostile: pick(["Back off.", "Who asked you?", "Get out of my face."]) }[stance] || tic(v, "yes"));
-    if (plan) parts.push(pick(["I'm going to do something about this.", "Leave it with me.", "Oh, someone's hearing about this."]));
-    return parts.join(" ");
-  },
-  opener({ v, purpose, playerName }) {
-    if (/team up|alliance/.test(purpose)) return pick([`Psst. ${playerName}. You and me should stick together.`, `Walk with me. I think we could help each other.`, `I like you. Don't make it weird. Want to team up?`]);
-    if (/vote/.test(purpose)) return pick([`So. Who are you voting for? Asking for a friend.`, `The vote's coming. I have a name in mind. Do you?`, `Between us, I know who should go next.`]);
-    if (/gossip|tea|tell/.test(purpose)) return pick([`Okay, you did NOT hear this from me...`, `Come here. You need to hear this.`, `Have you heard what's going around?`]);
-    if (/confront|warn/.test(purpose)) return pick([`We need to talk. Now.`, `I heard what you've been saying.`, `You've got some nerve, new girl.`]);
-    return `${tic(v, "hi")} Got a minute?`;
-  },
-  exchange({ a, b, topic, rumorText, aboutName, outcome }) {
-    const A = a.id, B = b.id;
-    if (rumorText) {
-      const t = rumorText.length > 90 ? rumorText.slice(0, 88) + "..." : rumorText;
-      if (/asks .* about what people are saying about them/.test(topic)) return [
-        { id: A, text: pick(["So. I heard something about you.", "Is it true? What everyone's saying?"]) },
-        { id: A, text: t },
-        { id: B, text: /admit/.test(outcome) ? pick(["...Fine. It's true. Happy?", "Who told you that? ...Okay, yes."]) : pick(["That is a filthy lie.", "Excuse me? Who said that?"]) },
-        { id: A, text: /not convinced/.test(outcome) ? pick(["Mm-hm. Sure.", "Whatever you say."]) : pick(["Okay, okay. I believe you.", "Fine. Sorry I asked."]) },
-      ];
-      return [
-        { id: A, text: pick(["Okay, don't tell anyone, but...", "You did not hear this from me.", "Brace yourself."]) },
-        { id: A, text: t },
-        { id: B, text: /believes/.test(outcome) ? pick(["Stop. No. I KNEW it.", "Shut up. That explains everything.", "Oh, that's delicious."]) : pick(["That can't be right.", "Who told you that?", "Hm. Sounds made up."]) },
-      ];
-    }
-    if (/alliance|team up/.test(topic)) return [
-      { id: A, text: pick(["Real talk. Us two. Till the end?", "We should look out for each other. Quietly."]) },
-      { id: B, text: /agree|form/.test(outcome) ? pick(["Deal. Nobody knows.", "Okay. Pinky swear."]) : pick(["I'll think about it.", "I don't do teams."]) },
-    ];
-    if (/vote/.test(topic)) return [
-      { id: A, text: aboutName ? pick([`I'm thinking ${aboutName} goes next.`, `${aboutName} has to go. You with me?`]) : "We need a plan for the vote." },
-      { id: B, text: /agree/.test(outcome) ? pick(["Done. Consider it handled.", "Oh, gladly."]) : pick(["Hm. Maybe.", "Let me think about that."]) },
-    ];
-    if (/argument/.test(topic)) return [
-      { id: A, text: pick(["Got something to say to me?", "I know what you did.", "You are SO fake."]) },
-      { id: B, text: pick(["Excuse me?!", "Oh, here we go.", "Say that again. I dare you."]) },
-      { id: A, text: pick(["You heard me.", "Everyone's thinking it.", "Don't play dumb."]) },
-    ];
-    if (/complains/.test(topic)) return [
-      { id: A, text: pick(["Can we talk about how annoying the new girl is?", "Ugh, did you see her today?", "Some people in this town, honestly."]) },
-      { id: B, text: pick(["Don't get me started.", "Ugh, I know.", "Oh, honey. Same."]) },
-    ];
-    if (/patch things up/.test(topic)) return [
-      { id: A, text: pick(["Look... I'm sorry about before.", "Can we just be okay again?"]) },
-      { id: B, text: /warmer/.test(outcome) ? pick(["Yeah. Okay. Me too.", "Fine. Hug it out."]) : pick(["We'll see.", "It's going to take more than that."]) },
-    ];
-    return [
-      { id: A, text: pick(["Lovely day, isn't it?", "Did you see what she wore today?", "Busy morning?", "This town is too quiet. I don't trust it."]) },
-      { id: B, text: pick(["Mm. Suspiciously lovely.", "Don't even. I saw.", "Exhausting.", "Quiet means someone's plotting."]) },
-    ];
-  },
-  parting({ v, betrayedBy }) {
-    if (betrayedBy.length) return `${betrayedBy[0]}, I hope it was worth it. Enjoy your little town.`;
-    return pick(["Fine. This town never deserved me.", "Remember, I let you win.", "You'll all be begging me to come back."]);
-  },
-  show({ v, what }) {
-    const who = (what.match(/(?:about|to|at|send|roasted|out) ([A-Z][a-z]+)/) || [])[1] || "her";
-    if (/lovely|nice|toast/.test(what)) return pick([`To ${who}. Honestly? The best thing about this town.`, `I just want to say ${who} is a gem. There. I said it.`, `${who}, you're a sweetheart and everyone knows it.`]);
-    if (/backhanded/.test(what)) return pick([`${who} is so brave. Wearing that. In public.`, `I love how ${who} never lets being wrong slow her down.`, `${who}, you look great. For you.`]);
-    if (/called out|fires right back|fired back/.test(what)) return pick([`${who}, we all know what you did. Don't smile at me like that.`, `I'm done pretending, ${who}. You're fake and everyone here knows it.`, `${who}. You know exactly why I'm saying your name.`]);
-    if (/roast|joke/.test(what)) return pick([`${who} is like a sunny day. Rare, and everyone's relieved when it's over.`, `I'd roast ${who}, but life already did.`, `${who} has a face for gossip columns. The back page.`]);
-    if (/told the whole crowd|tells everyone/.test(what)) return pick(["Okay, I wasn't going to say this, but... everyone deserves to know.", "So. Apparently. And I have this on very good authority...", "You did not hear it from me. Well. You did. Right now."]);
-    if (/apolog|sorry/.test(what)) return pick([`${who}, I'm sorry. I mean it. Mostly.`, `I owe ${who} an apology. So... sorry. There.`, `I was wrong about ${who}. That's hard for me to say.`]);
-    if (/confess|admit/.test(what)) return pick(["Fine. It's true. Happy now?", "I'm not proud of it. But yes.", "Okay. Deep breath. Yes. I did."]);
-    if (/denied|denies/.test(what)) return pick(["That is a filthy lie and whoever started it knows it.", "Never. Not once. Next question.", "Wow. Creative. Also completely made up."]);
-    if (/begged|keep her|stay/.test(what)) return pick(["I love this town. Please don't send me home. I've got so much left to give!", "Keep me. I'm the only one here who's actually fun.", "Vote with your hearts, ladies. Your hearts say me."]);
-    if (/send .* home/.test(what)) return pick([`${who}. Sorry, not sorry.`, `If it's up to me, ${who} packs tonight.`, `${who} has to go. Everyone's thinking it.`]);
-    if (/laughed/.test(what)) return pick(["Ha! Cute. Next.", "Oh, that's adorable. Is that all?", "Sweetie, I've been roasted by better."]);
-    if (/hurt|quiet/.test(what)) return pick(["...Wow. Okay.", "I... don't have anything to say to that.", "Fine. Whatever."]);
-    if (/heckle/.test(what)) return pick([`Oh please, ${who}. Nobody believes you.`, `Liar! Liar!`, `Sure, ${who}. Sure.`]);
-    if (/stick|defend/.test(what)) return pick([`Leave ${who} alone. She's the only honest one here.`, `I believe ${who}. So back off.`, `${who} doesn't deserve this.`]);
-    return pick(["I love everyone here equally. Next question.", "No comment, darling.", "I'm just happy to be here."]);
-  },
-  voteReaction({ v, voter, wasAlly }) {
-    if (wasAlly) return pick([`${name(voter)}?! Seriously?`, `Wow. ${name(voter)}. Wow.`, `Et tu, ${name(voter)}?`]);
-    return pick(["Of course.", "Shocking. Not.", "Called it.", "Cute.", "Mm-hm."]);
-  },
-  bye: (v) => tic(v, "bye"),
-  hi: (v) => tic(v, "hi"),
-};
-
-// Short barks for when a cast member is just around. Never decisions, just color.
-export const BARKS = {
-  celeste: ["Ugh, the lighting here is criminal.", "Do I look like I care? Don't answer that.", "Smile, ladies. Someone's always watching.", "I'm not mean. I'm honest with good hair."],
-  odette: ["Everything has a price.", "Interesting...", "I'll remember that.", "Debts always come due."],
-  wren: ["Ooh, what was THAT about?", "Somebody tell me something!", "Love, you would not BELIEVE my morning.", "Cider's on me. Gossip's on you."],
-  sylvie: ["Kill me.", "Wow. Amazing. Not.", "One day this will all be mine.", "Some people, honestly."],
-  marigold: ["Oh gosh, is it that late?", "Everyone's being so nice today. Too nice?", "Cinnamon buns fix everything.", "Please don't fight, please don't fight..."],
-  pippa: ["Wait, what did I miss?!", "Honest, I love it here!", "Brenna's gonna be so proud!", "Is everyone fighting? Should I be fighting?"],
-  brenna: ["Hmph.", "Two-faced, the lot of them.", "Back to work.", "Say it to my face."],
-  juniper: ["The bees are nervous today.", "Somebody's lying. I can smell it.", "Mercury is doing something rude.", "Hello, little toad."],
-  hesper: ["Order. That's all I ask.", "In my day, we had manners.", "Hmph. Newcomers.", "Rules exist for a reason, dear."],
-  tansy: ["Ooh, that's a headline.", "Hold that thought, I'm writing it down.", "Everyone has a story.", "Quiet towns make the best stories."],
-};

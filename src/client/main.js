@@ -1,6 +1,7 @@
 // Gossiptown in the browser: wires the town, the cast, the camera, the controls and the
 // screens to the game. The game itself (Jev decisions, Claude words) lives in src/core.
 
+import * as inspect from "../core/inspect.js";
 import * as THREE from "three";
 import { renderer, camera, setTime, updateSky, resize, env } from "./scene.js";
 import { buildTown, updateTown, setClockHands, setBoardNotes } from "./town.js";
@@ -15,7 +16,6 @@ import { runShow } from "./spotlight.js";
 import * as audio from "./audio.js";
 import { openWardrobe, isOpen as wardrobeOpen } from "./closet.js";
 import * as W from "../core/wardrobe.js";
-import { remark as lookRemark } from "../core/looks.js";
 import { FORMATS } from "../core/events.js";
 import { createGame, hasSave } from "../core/game.js";
 import * as sim from "../core/sim.js";
@@ -147,7 +147,8 @@ const takenSpots = () => Object.values(people).map((p) => p.walker.dest).filter(
 function sendTo(v) {
   const p = people[v.id];
   if (!p || p.gone) return;
-  if (v.location === "home") {
+  const dest = v.location === "lane" ? v.dest : v.location;
+  if (dest === "home") {
     const d = L.homeDoor(v.id);
     if (p.inside) return;
     p.walker.goTo(d.x, d.z);
@@ -155,8 +156,9 @@ function sendTo(v) {
   } else {
     if (p.inside) emerge(v.id);
     p.goingHome = false;
-    const spot = L.spotFor(v.location, takenSpots());
+    const spot = (v.location === "lane" ? v.destSpot : v.spot) || L.spotFor(dest, takenSpots());
     p.walker.goTo(spot.x, spot.z);
+    p.walker.dest = spot;
   }
   p.walker.face = null;
 }
@@ -179,7 +181,8 @@ function placeNow(v) {
   p.gone = false;
   if (v.location === "home") { const d = L.homeDoor(v.id); p.walker.x = d.x; p.walker.z = d.z; goInside(v.id); return; }
   p.inside = false; p.model.root.visible = true;
-  const spot = L.spotFor(v.location, takenSpots());
+  if (v.location === "lane" && v.dest) { const f = v.from || v.destSpot; p.walker.x = f.x; p.walker.z = f.z; p.walker.stop(); sendTo(v); return; }
+  const spot = v.spot || L.spotFor(v.location, takenSpots());
   p.walker.x = spot.x; p.walker.z = spot.z; p.walker.stop(); p.walker.dest = spot;
 }
 
@@ -211,22 +214,15 @@ const colorOf = (id) => (id === "player" ? "#e86f5a" : { celeste: "#ff6f9c", ode
 
 const ui = {
   moved: (v) => sendTo(v),
+  arrived: (v) => sendTo(v),
+  // two women about to talk: they stand where the sim put them
   pair(a, b) {
-    const pa = people[a.id], pb = people[b.id];
-    if (!pa || !pb || pa.inside || pb.inside) return;
-    const t = pa.walker.dest || { x: pa.walker.x, z: pa.walker.z };
-    for (const [dx, dz] of [[1.1, 0], [-1.1, 0], [0, 1.1], [0, -1.1], [0.8, 0.8], [-0.8, -0.8]]) {
-      if (!L.solidAt(t.x + dx, t.z + dz, 0.35)) { pb.walker.goTo(t.x + dx, t.z + dz); pb.walker.dest = { x: t.x + dx, z: t.z + dz }; break; }
+    for (const v of [a, b]) {
+      const p = people[v.id];
+      if (!p || p.inside || p.gone || !v.spot || talk?.id === v.id) continue;
+      p.walker.goTo(v.spot.x, v.spot.z); p.walker.dest = v.spot;
     }
   },
-  hearing(a, b) {
-    const pa = people[a.id]?.walker, pb = people[b.id]?.walker;
-    if (!pa || !pb || people[a.id].inside || people[b.id].inside) return "none";
-    const ta = pa.dest || pa, tb = pb.dest || pb;
-    const d = Math.min(Math.hypot((pa.x + pb.x) / 2 - me.walker.x, (pa.z + pb.z) / 2 - me.walker.z), Math.hypot((ta.x + tb.x) / 2 - me.walker.x, (ta.z + tb.z) / 2 - me.walker.z));
-    return d <= 6.5 ? "full" : d <= 13 ? "part" : "none";
-  },
-  distance(v) { const p = people[v.id]; if (!p || p.inside || p.gone) return 999; return Math.hypot(p.walker.x - me.walker.x, p.walker.z - me.walker.z); },
   exchange: (e) => { if (mode === "play") playExchange(e); },
   headline: (text, kind) => H.chyron(text, kind),
   emote: (id, kind) => { if (people[id] && !people[id].inside) B.emote(id, kind); },
@@ -253,9 +249,16 @@ const ui = {
     frameFns.add(fn);
     if (Math.hypot(pa.walker.x - me.walker.x, pa.walker.z - me.walker.z) < 18) H.tip("fight");
   },
-  lookJudged(v, rec) { lookMoment(v, rec); },
+  lookJudged(v, rec) { if (rec.seenByPlayer && mode === "play") H.tip("looks"); },
   gift(id, how) { B.emote(id, { delighted: "heart", pleased: "flower", suspicious: "suspicious", insulted: "anger" }[how]); },
-  approach: (v, line, purpose, conv, opts) => walkUp(v, line, purpose, opts),
+  // a line said to the newcomer: in a talk she's in, or a woman coming over to start one
+  toPlayer({ by, text }) {
+    if (talk && talk.id === by) { talk.think?.close(); talk.think = null; B.say(by, text, { name: first(by), color: colorOf(by), hold: Math.max(4, text.length / 12) }); return; }
+    const v = S()?.people[by];
+    if (v && !talk && mode === "play") walkUp(v, text);
+  },
+  talkEnded(t) { if (talk && (t.a === talk.id || t.b === talk.id) && (t.a === "player" || t.b === "player")) endTalk(false, true); },
+  fightPlayer: (id, by) => { if (mode === "play" || mode === "show") playerBrawl(id, by); },
   first(kind) {
     const map = { rumor: "rumor", told: "told", alliance: "alliance", "alliance-overheard": "alliance-overheard", "vote-pitch": "vote-pitch", caught: "caught", talk: "talk" };
     if (map[kind]) H.tip(map[kind]);
@@ -291,7 +294,7 @@ function boardBadge(reset = false) {
 
 // ---------- someone walks up to you ----------
 
-async function walkUp(v, line, purpose, { attack = false } = {}) {
+async function walkUp(v, line) {
   const p = people[v.id];
   if (!p || p.inside || talk || mode !== "play") return;
   const w = p.walker;
@@ -307,13 +310,6 @@ async function walkUp(v, line, purpose, { attack = false } = {}) {
   }
   if (talk || mode !== "play" || Math.hypot(w.x - me.walker.x, w.z - me.walker.z) > 3.5) return;
   w.stop();
-  if (attack) {
-    B.say(v.id, line, { name: first(v.id), color: colorOf(v.id), hold: 2.5 });
-    B.emote(v.id, "anger");
-    await wait(1400);
-    if (mode === "play" && !talk) playerBrawl(v.id, v.id);
-    return;
-  }
   H.tip("approach");
   B.emote(v.id, "wave");
   startTalk(v.id, line);
@@ -325,6 +321,7 @@ function startTalk(id, opener = null) {
   const s = S();
   if (talk || !s || mode !== "play") return;
   if (!game.startTalk(id)) return;
+  if (S().player.talkingTo !== id) return;
   const p = people[id];
   p.walker.stop(); p.walker.frozen = true;
   p.walker.face = me.walker;
@@ -332,7 +329,7 @@ function startTalk(id, opener = null) {
   me.model.lookAt(p.model.root.position);
   talk = { id, busy: false, bubble: null };
   if (opener) B.say(id, opener, { name: first(id), color: colorOf(id), hold: 6 });
-  else if (!S().player.convo?.lines.length) B.say(id, voice.phrase.hi(s.people[id]), { name: first(id), color: colorOf(id), hold: 3 });
+  else B.emote(id, "wave");
   openTyping();
 }
 
@@ -352,42 +349,40 @@ async function sayLine(text) {
   talk.busy = true;
   talk.bubble?.close(); talk.bubble = null;
   B.say("player", text, { name: S().player.name, color: colorOf("player"), you: true, hold: 2.5 });
-  const think = B.thinking(id, { name: first(id), color: colorOf(id) });
-  let revealed = false;
-  const res = await game.say(text, (partial) => { if (!revealed) { think.reveal(partial); revealed = true; } else think.set(partial); });
-  if (!res) { think.close(); talk && (talk.busy = false); return; }
-  if (!revealed) think.reveal(res.reply); else think.set(res.reply);
+  talk.think = B.thinking(id, { name: first(id), color: colorOf(id) });
+  let res = null;
+  try { res = await game.say(text); } catch (e) { console.error(e); }
+  if (talk?.think) { talk.think.close(); talk.think = null; }
   if (!talk || talk.id !== id) return;
   talk.busy = false;
+  if (!res) { openTyping(); return; }
+  if (res.failed) { H.toast("Nobody could make out a word: dialogue isn't reachable right now."); endTalk(false); return; }
+  const said = res.reply || "";
   if (res.fight) {
-    await wait(Math.max(1200, res.reply.length * 30));
+    await wait(Math.max(900, said.length * 30));
     playerBrawl(id, res.fight.by);
     return;
   }
   if (res.leaving) {
-    await wait(Math.max(1500, res.reply.length * 40));
+    await wait(Math.max(1500, said.length * 40));
     endTalk(false);
     return;
   }
-  await wait(500);
+  await wait(400);
   if (talk && talk.id === id) openTyping();
 }
 
-function endTalk(sayBye) {
+function endTalk(_walkedOff, fromGame = false) {
   if (!talk) return;
   const id = talk.id;
-  talk.bubble?.close();
+  talk.bubble?.close(); talk.think?.close();
   const p = people[id];
-  if (sayBye) {
-    B.say("player", pick(["See you around!", "Gotta run!", "Bye for now!", "Talk later!"]), { name: S().player.name, color: colorOf("player"), you: true, hold: 1.4 });
-    setTimeout(() => { if (!p.inside) B.say(id, voice.phrase.bye(S().people[id]), { name: first(id), color: colorOf(id), hold: 1.6 }); }, 500);
-  }
   p.walker.frozen = false;
   p.walker.face = null;
   p.model.lookAt(null); me.model.lookAt(null);
-  game.endTalk();
+  if (!fromGame) game.endTalk();
   talk = null;
-  document.getElementById("speech").blur();
+  document.getElementById("speech")?.blur();
 }
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
@@ -400,7 +395,7 @@ async function playerBrawl(id, by) {
   const s = S();
   const p = people[id], v = s.people[id];
   if (!p || p.inside || p.gone) return;
-  if (talk) { talk.bubble?.close(); talk = null; game.endTalk(); }
+  if (talk) endTalk(false);
   B.hush("player"); B.hush(id);
   mode = "fight";
   H.hint("");
@@ -445,8 +440,6 @@ async function playerBrawl(id, by) {
   B.emote(result === "won" ? "player" : id, "sparkle");
   B.emote(result === "won" ? id : "player", "star");
   audio.sting(result === "won" ? "good" : "bad");
-  const gloat = { won: ["Ow! Fine! FINE!", "You'll pay for that.", "My hair!"], lost: ["And stay down, new girl.", "That's what you get.", "Don't EVER cross me."], backed_down: ["That's right, walk away.", "Coward!", "Run along, sweetie."] }[result];
-  B.say(id, pick(gloat), { name: first(id), color: colorOf(id), hold: 2.4 });
   mode = back;
   const r = await game.fight(id, { by, result });
   if (r) {
@@ -536,13 +529,12 @@ async function useSpot(sp) {
   if (sp.kind === "mail") {
     acting = true;
     me.walker.stop();
-    B.say("player", pick(["Just a little peek...", "Nobody's looking...", "Ooh, what's this?"]), { name: s.player.name, color: colorOf("player"), you: true, hold: 1.6 });
     B.emote("player", "suspicious");
     audio.sfx("creak");
     let r = null;
     try { r = await game.snoop(sp.owner); } catch (e) { console.error(e); } finally { acting = false; }
     if (!r) return;
-    B.say("player", r.isSecret ? `No way! ${r.found}` : r.found, { name: s.player.name, color: colorOf("player"), you: true, hold: r.isSecret ? 6 : 3 });
+    if (r.found) H.toast(`📬 ${r.found}`);
     if (r.isSecret) B.emote("player", "gasp");
     return;
   }
@@ -612,7 +604,7 @@ function movePlayer(dt, bound = null) {
 // ---------- the main loop ----------
 
 let last = performance.now();
-let brainT = 0, barkT = 6, saveT = 0;
+let brainT = 0, heardSeen = -1;
 function frame(now) {
   const rawDt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -639,13 +631,9 @@ function frame(now) {
     me.walker.v += (pv - me.walker.v) * Math.min(1, dt * 12);
     me.model.update(dt, gameTime, { speed: me.walker.v, talking: B.isTalking("player") });
     s.player.location = L.placeAt(me.walker.x, me.walker.z);
-    if ((saveT += dt) > 2) { saveT = 0; s.player.pos = { x: me.walker.x, z: me.walker.z }; }
-    // ambient barks from idle women nearby
-    if ((barkT -= dt) < 0) {
-      barkT = 7 + Math.random() * 9;
-      const cands = sim.alive(s).filter((v) => { const p = people[v.id]; return !p.inside && !p.walker.moving && !B.hasBubble(v.id) && v.id !== talk?.id && Math.hypot(p.walker.x - me.walker.x, p.walker.z - me.walker.z) < 14; });
-      if (cands.length) { const v = pick(cands); B.say(v.id, pick(voice.BARKS[v.id] || ["Hm."]), { name: first(v.id), color: colorOf(v.id), muffled: true, hold: 1.8 }); }
-    }
+    s.player.pos = { x: me.walker.x, z: me.walker.z };
+    // new tea: something the newcomer learned (only ever from what she perceived)
+    if (s.player.heard.length > heardSeen) { if (heardSeen >= 0) { H.toast("☕ New tea on your Gossip Board (Tab)"); boardBadge(); } heardSeen = s.player.heard.length; }
   }
   // everyone else walks
   const ws = Object.values(people).filter((p) => !p.inside && !p.gone && p.model.root.visible).map((p) => p.walker);
@@ -790,7 +778,7 @@ function openSettings() {
   const js = jev.status();
   $("set-jev-status").textContent = serverJev ? "Jev, through the game server" : js.live ? `Jev is connected (${js.why})` : `Offline stand-in. ${js.why}. Paste a Jev key below to use the real Jev.`;
   const vs = voice.voiceStatus();
-  $("set-voice-status").textContent = vs.label === "Phrasebook" ? "A built-in phrasebook (Claude isn't reachable from this page)" : `${vs.label}`;
+  $("set-voice-status").textContent = vs.label;
   for (const b of document.querySelectorAll("#set-day button")) b.classList.toggle("on", +b.dataset.v === settings.daySeconds);
   $("set-music").value = settings.music; $("set-sound").value = settings.sound;
   H.screen("settings", true);
@@ -849,23 +837,9 @@ $("t-continue").onclick = () => {
   H.screen("title", false);
   resume();
 };
-$("end-new").onclick = () => { try { localStorage.removeItem("gossiptown.season.v2"); } catch {} H.screen("endcard", false); toTitle(); };
+$("end-new").onclick = () => { try { localStorage.removeItem("gossiptown.season.v3"); } catch {} H.screen("endcard", false); toTitle(); };
 
 // ---------- how you look ----------
-
-let introLooks = false, lastLookLine = 0;
-// a woman just sized up your outfit: show it if you can see her
-function lookMoment(v, rec) {
-  if (introLooks || mode !== "play" || talk?.id === v.id) return;
-  const p = people[v.id];
-  if (!p || p.inside) return;
-  H.tip("looks");
-  const now = performance.now();
-  if (now - lastLookLine < 7000 || rec.reaction === "shrugs") return;
-  lastLookLine = now;
-  const behind = ["sneers", "envious", "copycat", "suspicious"].includes(rec.reaction);
-  B.say(v.id, lookRemark(S(), v, rec), { name: first(v.id), color: colorOf(v.id), muffled: behind, hold: 2.4 });
-}
 
 // The welcome party gets its first good look at you.
 async function firstImpressions(hostSay) {
@@ -875,24 +849,13 @@ async function firstImpressions(hostSay) {
   const fn = (dt) => { spin.t += dt; me.walker.heading = Math.PI + Math.sin(Math.min(1, spin.t / 1.6) * Math.PI * 2) * 0.9 * (1 - Math.min(1, spin.t / 1.6)); if (spin.t > 1.7) { me.walker.heading = Math.PI; frameFns.delete(fn); } };
   frameFns.add(fn);
   await hostSay(`But first, ladies, take a good long look at our newcomer!`, 2600);
-  introLooks = true;
   let recs = [];
   try { recs = await game.firstLooks({ where: "the welcome party in the plaza: the newcomer's very first appearance" }); } catch (e) { console.error(e); }
   cam.shot(new THREE.Vector3(0, 0.8, -3.2), 9.5, { from: new THREE.Vector3(0, 0, 14), height: 8.5 });
   await wait(1100);
   const EM = { admires: "heart", approves: "sparkle", sneers: "cringe", envious: "anger", copycat: "anger", suspicious: "suspicious" };
   for (const v of sim.alive(s)) { const r = s.looks[v.id]; if (r && EM[r.reaction]) { B.emote(v.id, EM[r.reaction]); await wait(90); } }
-  await wait(700);
-  const weight = (r) => Math.abs(r.verdict - 2) + (["envious", "copycat", "suspicious", "admires"].includes(r.reaction) ? 1 : 0) + Math.random() * 0.5;
-  const loud = sim.alive(s).map((v) => [v, s.looks[v.id]]).filter(([, r]) => r && r.reaction !== "shrugs").sort((a, b) => weight(b[1]) - weight(a[1])).slice(0, 3);
-  for (const [v, r] of loud) {
-    const behind = ["sneers", "envious", "copycat", "suspicious"].includes(r.reaction);
-    const b = B.say(v.id, lookRemark(s, v, r), { name: first(v.id), color: colorOf(v.id), muffled: behind, hold: 999 });
-    await waitOrEnter(2300);
-    b.close();
-    await wait(150);
-  }
-  introLooks = false;
+  await wait(1200);
   const avg = recs.reduce((t, r) => t + r.verdict, 0) / Math.max(1, recs.length);
   await hostSay(avg >= 2.8 ? `Ooh, they're impressed. Careful, sweetie, nobody likes the prettiest girl in the room for long.` : avg <= 1.6 ? `Yikes. Tough crowd! Maybe pay a visit to the clothes rack by the salon.` : `Mixed reviews! Some love it, some are already whispering. How thrilling.`);
 }
@@ -902,11 +865,12 @@ async function intro() {
   const s = S();
   // the welcome party in the plaza
   const arc = VILLAGERS.map((v, i) => { const a = Math.PI * (1.12 + (i / (VILLAGERS.length - 1)) * 0.76); return { id: v.id, x: Math.cos(a) * 6.4, z: Math.sin(a) * 6.4 + 1.2 }; });
-  for (const a of arc) { const p = people[a.id]; p.inside = false; p.gone = false; p.model.root.visible = true; p.walker.x = a.x; p.walker.z = a.z; p.walker.stop(); p.walker.face = { x: 0, z: 6.5 }; p.walker.heading = Math.atan2(-a.x, 6.5 - a.z); s.people[a.id].location = "plaza"; }
+  for (const a of arc) { const p = people[a.id]; p.inside = false; p.gone = false; p.model.root.visible = true; p.walker.x = a.x; p.walker.z = a.z; p.walker.stop(); p.walker.face = { x: 0, z: 6.5 }; p.walker.heading = Math.atan2(-a.x, 6.5 - a.z); s.people[a.id].location = "plaza"; s.people[a.id].spot = { x: a.x, z: a.z }; }
   const host = people[HOST.id].walker;
   host.x = -1.6; host.z = 4.2; host.stop(); host.face = { x: 0, z: 8 };
   me.walker.x = 0.6; me.walker.z = 8.4; me.walker.heading = Math.PI;
   me.model.root.position.set(me.walker.x, 0, me.walker.z); me.model.root.rotation.y = Math.PI;
+  s.player.pos = { x: me.walker.x, z: me.walker.z };
   H.cinema(true);
   cam.shot(new THREE.Vector3(-0.5, 1.4, 6), 7, { from: new THREE.Vector3(0, 0, 20), height: 1.6, snap: true });
   await H.fade(false);
@@ -1108,8 +1072,8 @@ function showNight(s, lines) {
   const lastVote = s.votes.at(-1);
   $("night-kicker").textContent = `End of day ${s.day}`;
   $("night-title").textContent = lastVote?.day === s.day ? `${sim.nameOf(s, lastVote.out)} has left Gossiptown.` : "The town goes to bed...";
-  const rows = lines.map((l) => `<div class="nb-line"><span class="ic">${/quit|fired/.test(l) ? "💼" : "🌙"}</span><span>${l}</span></div>`).join("");
-  $("night-body").innerHTML = `${rows || `<div class="nb-recap">A quiet night. Or so it seems. Somewhere, someone is plotting.</div>`}
+  const rows = (lines || []).map((l) => `<div class="nb-line"><span class="ic">🌙</span><span>${l}</span></div>`).join("");
+  $("night-body").innerHTML = `${rows}
     <div class="nb-recap">Today you heard <b>${today}</b> new rumor${today === 1 ? "" : "s"} and started <b>${told}</b>.</div>
     <div class="nb-recap">${sim.daysToVote({ ...s, day: s.day + 1 }) === 0 ? "🔥 Tomorrow night is a vote." : `Next vote in ${sim.daysToVote({ ...s, day: s.day + 1 })} days.`}</div>`;
   $("night-ok").innerHTML = `Start Day ${s.day + 1} <kbd>Enter</kbd>`;
@@ -1150,6 +1114,11 @@ function showEnd(result) {
   const against = last ? Object.entries(last.ballots).filter(([, t]) => t === "player").map(([x]) => sim.nameOf(s, x)) : [];
   $("end-body").innerHTML = `<div class="end-stats"><div><b>${s.day}</b>days survived</div><div><b>${myRoots.size}</b>rumors started</div><div><b>${reach}</b>women believed you</div><div><b>${s.player.heard.length}</b>pieces of tea</div><div><b>${sim.alliancesOf(s, "player").length}</b>pacts</div><div><b>${betrayals.length}</b>betrayals</div></div>
     <div class="end-list">${!won && last && !finale && against.length ? `<p><b>Voted you out:</b> ${against.join(", ")}</p>` : ""}${finale ? `<p><b>Jury votes:</b> ${Object.entries(last.ballots).map(([x, t]) => `${sim.nameOf(s, x)} → ${sim.nameOf(s, t)}`).join(" · ")}</p>` : ""}${s.player.fights ? `<p><b>Cat fights you started:</b> ${s.player.fights}</p>` : ""}${betrayals.length ? `<p><b>Broke their word to you:</b> ${[...new Set(betrayals.map((b) => sim.nameOf(s, b.by)))].join(", ")}</p>` : ""}</div>`;
+  // what was really going on, straight from the record
+  const rv = game.reveal();
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const group = (k, title) => { const xs = rv.filter((x) => x.kind === k); return xs.length ? `<p><b>${title}</b></p>${xs.slice(0, 12).map((x) => `<p class="muted">${esc(x.text)}</p>`).join("")}` : ""; };
+  $("end-body").innerHTML += `<div class="end-list reveal"><div class="section-title">What was really going on</div>${group("ballot", "Why they voted the way they did")}${group("promise", "Promises to you that weren't kept")}${group("lie", "Lies told")}${group("behind", "Said behind your back")}${group("secret", "Everyone's secrets")}</div>`;
   H.fade(false);
   H.screen("endcard", true);
   audio.sting(won ? "fanfare" : "sad");
@@ -1162,4 +1131,4 @@ voice.initVoice().then(() => H.setBrain(jev.status(), voice.voiceStatus()));
 toTitle();
 cam.pos.set(30, 20, 30);
 requestAnimationFrame(frame);
-window.__gossiptown = { renderer, get game() { return game; }, people, ui, cam, setPaused, get mode() { return mode; }, startVote, jev, voice, audio, me };
+window.__gossiptown = { renderer, get game() { return game; }, people, ui, cam, setPaused, get mode() { return mode; }, startVote, jev, voice, audio, me, inspect: { reputation: (id) => inspect.reputation(game.state(), id), reach: (rid) => inspect.reach(game.state(), rid), why: (id) => inspect.why(game.state(), id), whyChange: (q) => inspect.whyChange(game.state(), q), violations: () => game.state()?.violations || [] } };
